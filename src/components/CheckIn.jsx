@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import OrganizerPanel from './OrganizerPanel.jsx';
 
-export default function CheckIn({ scenarioCount, questionCount, onRegister, onStart, onCancel }) {
+export default function CheckIn({ scenarioCount, questionCount, onRegister, onStart, onCancel, onOrganizerAuthorizationChange }) {
   const [username, setUsername] = useState('');
   const [qrCode, setQrCode] = useState('');
   const [error, setError] = useState('');
@@ -123,7 +123,7 @@ export default function CheckIn({ scenarioCount, questionCount, onRegister, onSt
             : 'Hébergé sur Vercel : le QR code est accessible depuis Internet.'}</small>
         </aside>
       </div>
-      <OrganizerPanel />
+      <OrganizerPanel onAuthorizationChange={onOrganizerAuthorizationChange} />
     </main>
   );
 }

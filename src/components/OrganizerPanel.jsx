@@ -14,7 +14,7 @@ async function organizerRequest(action, code) {
   return body;
 }
 
-export default function OrganizerPanel() {
+export default function OrganizerPanel({ onAuthorizationChange }) {
   const [code, setCode] = useState('');
   const [authorized, setAuthorized] = useState(false);
   const [session, setSession] = useState(null);
@@ -58,6 +58,7 @@ export default function OrganizerPanel() {
     try {
       await refreshStatus();
       setAuthorized(true);
+      onAuthorizationChange(true);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -121,7 +122,7 @@ export default function OrganizerPanel() {
               {busy ? 'Préparation…' : 'Créer une nouvelle session'}
             </button>
           )}
-          <button className="organizer-logout" onClick={() => { setAuthorized(false); setCode(''); setSession(null); }} type="button">Fermer le panneau</button>
+          <button className="organizer-logout" onClick={() => { setAuthorized(false); setCode(''); setSession(null); onAuthorizationChange(false); }} type="button">Fermer le panneau</button>
         </div>
       )}
       {error && <p className="check-in-error" role="alert">{error}</p>}

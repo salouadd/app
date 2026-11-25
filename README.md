@@ -13,7 +13,7 @@ DecisionLab est un simulateur de décisions. L’hébergement Vercel et Supabase
    - `SUPABASE_SERVICE_ROLE_KEY` : la clé secrète `service_role` de Supabase. Elle doit rester côté serveur ; ne la préfixe jamais par `VITE_`.
    - `ORGANIZER_CODE` : un code long et privé, connu uniquement de l’organisateur.
 6. Déploie ou redéploie le projet après avoir ajouté les variables.
-7. Ouvre l’adresse Vercel et affiche le QR code. Les participants le scannent, saisissent un pseudo et attendent. Dans **Accès organisateur**, saisis le code privé et clique **Démarrer pour tout le monde**.
+7. Ouvre l’adresse Vercel et affiche le QR code. Les participants le scannent, saisissent un pseudo et attendent. Dans **Accès organisateur**, saisis le code privé et clique **Démarrer pour tout le monde**. Seul un organisateur authentifié voit l’onglet **Créateur de scénario**.
 
 Après le parcours, les scores apparaissent dans le podium partagé. L’organisateur peut créer une nouvelle session pour le groupe suivant.
 
@@ -30,7 +30,7 @@ En local, l’API et l’application tournent sur le même ordinateur. Pour test
 
 ## Règles du parcours
 
-- Le parcours partagé comprend les quatre scénarios intégrés, soit seize questions. Les scénarios personnalisés restent locaux à l’appareil qui les a créés.
+- Le parcours partagé comprend les quatre scénarios intégrés, soit seize questions. Seul l’organisateur authentifié peut créer, importer ou modifier des scénarios personnalisés ; ceux-ci restent locaux à son navigateur et ne sont pas ajoutés au parcours partagé.
 - Le chronomètre dure 45 secondes (débutant), 40 (intermédiaire), 35 (avancé) ou 30 (expert). Une question sans réponse est enregistrée comme telle, sans modifier les scores, puis le parcours continue automatiquement.
 - La position de la réponse recommandée est mélangée et répartie entre A, B, C et D selon le nombre de choix.
 - Le serveur valide l’historique et recalcule les scores à partir des réponses reçues.

@@ -62,9 +62,13 @@ export default function App() {
   });
   const [{ screen, run }, setSession] = useState(initialRun);
   const [activeTab, setActiveTab] = useState('catalog');
+  const [organizerAuthorized, setOrganizerAuthorized] = useState(false);
   const [notice, setNotice] = useState('');
   const [leaderboard, setLeaderboard] = useState([]);
-  const scenarios = useMemo(() => [...defaultScenarios, ...customScenarios], [customScenarios]);
+  const scenarios = useMemo(
+    () => [...defaultScenarios, ...(organizerAuthorized ? customScenarios : [])],
+    [customScenarios, organizerAuthorized],
+  );
   const activeScenario = scenarios.find((scenario) => scenario.id === run?.scenarioId);
   const resultScenarios = (run?.scenarioIds || []).map((id) => scenarios.find((scenario) => scenario.id === id)).filter(Boolean);
 
@@ -200,13 +204,26 @@ export default function App() {
   }
 
   function addScenario(scenario) {
+    if (!organizerAuthorized) {
+      setNotice('La création de scénarios est réservée à l’organisateur.');
+      return;
+    }
     setCustomScenarios((current) => [...current.filter((item) => item.id !== scenario.id && item.title !== scenario.title), scenario]);
     setNotice('');
   }
 
   function deleteScenario(id) {
+    if (!organizerAuthorized) {
+      setNotice('La modification de scénarios est réservée à l’organisateur.');
+      return;
+    }
     setCustomScenarios((current) => current.filter((scenario) => scenario.id !== id));
     setNotice('');
+  }
+
+  function handleOrganizerAuthorizationChange(authorized) {
+    setOrganizerAuthorized(authorized);
+    if (!authorized) setActiveTab('catalog');
   }
 
   return (
@@ -217,7 +234,7 @@ export default function App() {
         </a>
         <nav className="main-nav" aria-label="Navigation principale">
           <button className={activeTab === 'catalog' ? 'nav-item active' : 'nav-item'} onClick={() => { returnToCatalog(); setActiveTab('catalog'); }}>Scénarios</button>
-          <button className={activeTab === 'builder' ? 'nav-item active' : 'nav-item'} onClick={() => { setSession({ screen: 'catalog', run: null }); setActiveTab('builder'); }}>Créateur de scénario</button>
+          {organizerAuthorized && <button className={activeTab === 'builder' ? 'nav-item active' : 'nav-item'} onClick={() => { setSession({ screen: 'catalog', run: null }); setActiveTab('builder'); }}>Créateur de scénario</button>}
         </nav>
         <div className="header-status"><span className="live-dot" /> CLASSEMENT PARTAGÉ</div>
       </header>
@@ -225,7 +242,7 @@ export default function App() {
       {notice && <div className="storage-notice" role="alert">{notice}<button onClick={() => setNotice('')} aria-label="Fermer">×</button></div>}
 
       <div className="page-content">
-        {activeTab === 'builder' ? (
+        {activeTab === 'builder' && organizerAuthorized ? (
           <ScenarioBuilder scenarios={scenarios} onAddScenario={addScenario} onDeleteScenario={deleteScenario} onError={setNotice} />
         ) : screen === 'checkin' ? (
           <CheckIn
@@ -234,6 +251,7 @@ export default function App() {
             onRegister={registerParticipant}
             onStart={startParticipantRun}
             onCancel={returnToCatalog}
+            onOrganizerAuthorizationChange={handleOrganizerAuthorizationChange}
           />
         ) : screen === 'simulation' && activeScenario && run ? (
           <Simulator
