@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { formatElapsedTime, rankLeaderboardEntries } from '../lib/scenarioRun.js';
 
 async function organizerRequest(action, code) {
   const response = await fetch('/api/session', {
@@ -19,6 +20,7 @@ export default function OrganizerPanel({ onAuthorizationChange }) {
   const [authorized, setAuthorized] = useState(false);
   const [session, setSession] = useState(null);
   const [participants, setParticipants] = useState([]);
+  const [leaderboard, setLeaderboard] = useState([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -27,6 +29,13 @@ export default function OrganizerPanel({ onAuthorizationChange }) {
     setSession(body.session);
     setParticipants(body.participants);
     setError('');
+  }
+
+  async function refreshLeaderboard(sessionId, isActive = () => true) {
+    const response = await fetch(`/api/leaderboard?sessionId=${encodeURIComponent(sessionId)}`);
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || 'Impossible de charger les résultats.');
+    if (isActive()) setLeaderboard(rankLeaderboardEntries(body.leaderboard));
   }
 
   useEffect(() => {
@@ -40,10 +49,12 @@ export default function OrganizerPanel({ onAuthorizationChange }) {
           setParticipants(body.participants);
           setError('');
         }
+        await refreshLeaderboard(body.session.id, () => active);
       } catch (requestError) {
         if (active) setError(requestError.message);
       }
     }
+    poll();
     const timer = window.setInterval(poll, 2500);
     return () => {
       active = false;
@@ -72,7 +83,10 @@ export default function OrganizerPanel({ onAuthorizationChange }) {
     try {
       const body = await organizerRequest(action, code);
       setSession(body.session);
-      if (action === 'reset') setParticipants([]);
+      if (action === 'reset') {
+        setParticipants([]);
+        setLeaderboard([]);
+      }
       else await refreshStatus();
     } catch (requestError) {
       setError(requestError.message);
@@ -113,6 +127,24 @@ export default function OrganizerPanel({ onAuthorizationChange }) {
               {participants.map((participant) => <li key={participant.id}>{participant.username}</li>)}
             </ul>
           )}
+          <section className="organizer-results" aria-live="polite">
+            <div className="organizer-results-heading">
+              <h3>Classement actuel</h3>
+              <span>{leaderboard.filter((entry) => entry.status === 'terminé').length}/{leaderboard.length} terminé(s)</span>
+            </div>
+            {leaderboard.length === 0
+              ? <p>Le classement apparaîtra dès qu’un participant aura répondu à une question.</p>
+              : (
+                <ol className="organizer-result-list">
+                  {leaderboard.map((entry) => (
+                    <li key={entry.username}>
+                      <div><strong>#{entry.rank} {entry.username}</strong><b>{entry.score}%</b></div>
+                      <small>{entry.status} · Temps total {formatElapsedTime(entry.elapsedMs)}</small>
+                    </li>
+                  ))}
+                </ol>
+              )}
+          </section>
           {session?.status === 'waiting' ? (
             <button className="button button-primary" disabled={busy || participants.length === 0} onClick={() => performAction('start')} type="button">
               Démarrer pour tout le monde <span>→</span>
@@ -122,7 +154,7 @@ export default function OrganizerPanel({ onAuthorizationChange }) {
               {busy ? 'Préparation…' : 'Créer une nouvelle session'}
             </button>
           )}
-          <button className="organizer-logout" onClick={() => { setAuthorized(false); setCode(''); setSession(null); onAuthorizationChange(false); }} type="button">Fermer le panneau</button>
+          <button className="organizer-logout" onClick={() => { setAuthorized(false); setCode(''); setSession(null); setLeaderboard([]); onAuthorizationChange(false); }} type="button">Fermer le panneau</button>
         </div>
       )}
       {error && <p className="check-in-error" role="alert">{error}</p>}

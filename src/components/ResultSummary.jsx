@@ -1,69 +1,31 @@
+import { formatElapsedTime, rankLeaderboardEntries } from '../lib/scenarioRun.js';
+
 const metricDetails = [
-  { key: 'accuracyScore', label: 'Score global / bonnes réponses', color: 'cyan', description: 'Chaque bonne réponse augmente le score ; une erreur ne le diminue pas' },
-  { key: 'security', label: 'Sécurité / contrôle', color: 'cyan', description: 'Maîtrise du risque et des accès' },
-  { key: 'availability', label: 'Disponibilité / continuité', color: 'emerald', description: 'Maintien des services essentiels' },
-  { key: 'logic', label: 'Rigueur logique', color: 'amber', description: 'Qualité du raisonnement et des preuves' },
+  { key: 'accuracyScore', label: 'Score global', color: 'cyan', description: 'Chaque bonne réponse augmente le score ; une erreur ne le diminue pas' },
 ];
 
-function formatElapsedTime(milliseconds) {
-  const totalSeconds = Math.floor(milliseconds / 1000);
-  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`;
-}
-
-function getProfile(scores) {
-  const { security, availability, logic } = scores;
-  if (security >= 76 && availability >= 68 && logic >= 70) {
+function getProfile(accuracyScore) {
+  if (accuracyScore >= 80) {
     return {
       title: 'Architecte résilient',
-      subtitle: 'Équilibre sécurité / continuité',
-      copy: 'Vous privilégiez des réponses ciblées, mesurables et réversibles. Vous conciliez le contrôle du risque avec la continuité des services.',
+      subtitle: 'Excellente maîtrise du parcours',
+      copy: 'Vous avez choisi avec précision des réponses adaptées aux scénarios. Continuez à privilégier des décisions vérifiables et proportionnées.',
       tone: 'emerald',
-    };
-  }
-  if (security >= 78 && availability < 58) {
-    return {
-      title: 'Tout-sécuritaire',
-      subtitle: 'Risque de paralysie / fail-close',
-      copy: 'Votre réflexe de protection est fort. Travaillez les mesures graduées et les critères de reprise pour limiter les interruptions évitables.',
-      tone: 'amber',
-    };
-  }
-  if (availability >= 75 && security < 58) {
-    return {
-      title: 'Pragmatique risqué',
-      subtitle: 'Tendance au fail-open',
-      copy: 'Vous rétablissez vite les services, parfois au détriment du contrôle. Borner les exceptions et vérifier la posture renforcera vos arbitrages.',
-      tone: 'alert',
-    };
-  }
-  if (logic >= 78 && Math.abs(security - availability) < 20) {
-    return {
-      title: 'Analyste méthodique',
-      subtitle: 'Décisions guidées par les faits',
-      copy: 'Vous gardez les signaux en perspective et formulez des décisions cohérentes. Continuez à expliciter les critères qui déclenchent une escalade.',
-      tone: 'cyan',
     };
   }
   return {
     title: 'Décideur en progression',
-    subtitle: 'Un arbitrage à consolider',
-    copy: 'Vous avez exploré plusieurs compromis. Le bilan met en lumière les axes à renforcer avant de prendre une décision opérationnelle sous pression.',
+    subtitle: 'Des réponses à revoir',
+    copy: 'Le débrief détaille les choix recommandés et leurs conséquences pour vous aider à consolider votre raisonnement.',
     tone: 'amber',
   };
 }
 
 export default function ResultSummary({ scenarios, run, leaderboard, onReplay, onCatalog }) {
-  const profile = getProfile(run.scores);
+  const profile = getProfile(run.accuracyScore);
   const scenariosById = new Map(scenarios.map((scenario) => [scenario.id, scenario]));
   const username = run.participant?.username;
-  const rankedLeaderboard = [];
-  leaderboard.forEach((entry, index) => {
-    const previous = rankedLeaderboard[index - 1];
-    const sameResult = previous &&
-      previous.score === entry.score &&
-      previous.elapsedMs === entry.elapsedMs;
-    rankedLeaderboard.push({ ...entry, rank: sameResult ? previous.rank : index + 1 });
-  });
+  const rankedLeaderboard = rankLeaderboardEntries(leaderboard);
   const participantEntry = username
     ? rankedLeaderboard.find((entry) => entry.username.toLocaleLowerCase() === username.toLocaleLowerCase())
     : null;
@@ -84,8 +46,8 @@ export default function ResultSummary({ scenarios, run, leaderboard, onReplay, o
         {metricDetails.map((metric) => (
           <article className="result-metric panel" key={metric.key}>
             <div className="metric-topline"><span className={`status-dot ${metric.color}`} /><span>{metric.label}</span></div>
-            <div className="metric-number">{metric.key === 'accuracyScore' ? run.accuracyScore : run.scores[metric.key]}<small>%</small></div>
-            <div className="meter-track"><div className={`meter-fill ${metric.color}`} style={{ width: `${metric.key === 'accuracyScore' ? run.accuracyScore : run.scores[metric.key]}%` }} /></div>
+            <div className="metric-number">{run.accuracyScore}<small>%</small></div>
+            <div className="meter-track"><div className={`meter-fill ${metric.color}`} style={{ width: `${run.accuracyScore}%` }} /></div>
             <span className="metric-description">{metric.description}</span>
           </article>
         ))}
@@ -99,7 +61,6 @@ export default function ResultSummary({ scenarios, run, leaderboard, onReplay, o
           <strong>{profile.subtitle}</strong>
           <p>{profile.copy}</p>
         </div>
-        <div className="profile-score"><span>LOGIQUE</span><strong>{run.scores.logic}<small>%</small></strong></div>
       </section>
 
       {username && (

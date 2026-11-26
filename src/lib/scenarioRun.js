@@ -35,6 +35,23 @@ export function compareLeaderboardEntries(first, second) {
     Date.parse(first.completedAt) - Date.parse(second.completedAt);
 }
 
+export function rankLeaderboardEntries(entries) {
+  const rankedEntries = [];
+  entries.forEach((entry, index) => {
+    const previous = rankedEntries[index - 1];
+    const isTied = previous &&
+      previous.score === entry.score &&
+      previous.elapsedMs === entry.elapsedMs;
+    rankedEntries.push({ ...entry, rank: isTied ? previous.rank : index + 1 });
+  });
+  return rankedEntries;
+}
+
+export function formatElapsedTime(milliseconds) {
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`;
+}
+
 export function createOptionOrders(scenarios) {
   const positionCycles = new Map();
   return Object.fromEntries(scenarios.flatMap((scenario) => scenario.steps.map((step) => {

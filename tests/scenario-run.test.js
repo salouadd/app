@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { defaultScenarios } from '../src/data/scenarios.js';
-import { compareLeaderboardEntries, createOptionOrders, createRun, getTimerSeconds } from '../src/lib/scenarioRun.js';
-import { validateRun } from '../lib/validateRun.js';
+import { compareLeaderboardEntries, createOptionOrders, createRun, getTimerSeconds, rankLeaderboardEntries } from '../src/lib/scenarioRun.js';
+import { validateProgress, validateRun } from '../lib/validateRun.js';
 
 test('the full shared run contains sixteen decision questions', () => {
   assert.equal(defaultScenarios.length, 4);
@@ -76,13 +76,34 @@ test('the global score starts at zero and only correct answers raise it', () => 
   assert.equal(result.accuracyScore, 50);
 });
 
+test('partial progress is validated and scored against the complete run', () => {
+  const [scenario] = defaultScenarios;
+  const [firstStep, secondStep] = scenario.steps;
+  const firstRecommended = firstStep.options.find((option) => option.recommended);
+  const secondWrong = secondStep.options.find((option) => !option.recommended);
+  const result = validateProgress(
+    defaultScenarios.map((item) => item.id),
+    [
+      { scenarioId: scenario.id, stepId: firstStep.id, optionId: firstRecommended.id },
+      { scenarioId: scenario.id, stepId: secondStep.id, optionId: secondWrong.id },
+    ],
+    defaultScenarios,
+  );
+  assert.equal(result.valid, true);
+  assert.equal(result.correctAnswers, 1);
+  assert.equal(result.accuracyScore, 6);
+});
+
 test('leaderboard uses total completion time to break score ties', () => {
   const entries = [
     { username: 'Lina', score: 75, elapsedMs: 120000, completedAt: '2026-01-01T10:00:00Z' },
     { username: 'Noah', score: 100, elapsedMs: 240000, completedAt: '2026-01-01T10:00:00Z' },
     { username: 'Maya', score: 75, elapsedMs: 90000, completedAt: '2026-01-01T10:00:00Z' },
+    { username: 'Maya 2', score: 75, elapsedMs: 90000, completedAt: '2026-01-01T10:00:00Z' },
   ];
-  assert.deepEqual(entries.sort(compareLeaderboardEntries).map((entry) => entry.username), ['Noah', 'Maya', 'Lina']);
+  const ranked = rankLeaderboardEntries(entries.sort(compareLeaderboardEntries));
+  assert.deepEqual(ranked.map((entry) => entry.username), ['Noah', 'Maya', 'Maya 2', 'Lina']);
+  assert.deepEqual(ranked.map((entry) => entry.rank), [1, 2, 2, 4]);
 });
 
 test('question timers match scenario difficulty', () => {

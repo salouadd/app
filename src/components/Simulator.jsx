@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { calculateAccuracyScore, getCurrentRunTime, getTimerSeconds } from '../lib/scenarioRun.js';
+import {
+  calculateAccuracyScore,
+  formatElapsedTime,
+  getCurrentRunTime,
+  getTimerSeconds,
+  rankLeaderboardEntries,
+} from '../lib/scenarioRun.js';
 
 const scoreLabels = [
   { key: 'accuracyScore', label: 'Score global', short: 'BONNES RÉPONSES', color: 'cyan' },
-  { key: 'security', label: 'Sécurité / contrôle', short: 'SÉCURITÉ', color: 'cyan' },
-  { key: 'availability', label: 'Disponibilité / continuité', short: 'DISPONIBILITÉ', color: 'emerald' },
-  { key: 'logic', label: 'Rigueur logique', short: 'LOGIQUE', color: 'amber' },
 ];
 
 function ScoreMeter({ label, short, value, color, impact, footerText }) {
@@ -28,10 +31,12 @@ function ScoreMeter({ label, short, value, color, impact, footerText }) {
   );
 }
 
-export default function Simulator({ scenario, run, onRunChange, onFinish, onExit }) {
+export default function Simulator({ scenario, run, leaderboard, onProgress, onRunChange, onFinish, onExit }) {
   const [selectedId, setSelectedId] = useState(run.pendingOptionId ?? null);
   const [now, setNow] = useState(Date.now());
   const [timedOut, setTimedOut] = useState(false);
+  const [progressSaving, setProgressSaving] = useState(false);
+  const [progressError, setProgressError] = useState('');
   const timeoutKey = useRef('');
   const timeoutHandle = useRef(null);
   const step = useMemo(() => scenario.steps.find((item) => item.id === run.stepId), [scenario, run.stepId]);
@@ -46,6 +51,19 @@ export default function Simulator({ scenario, run, onRunChange, onFinish, onExit
   const stepStartedAt = Number.isFinite(parsedStart) ? parsedStart : now;
   const synchronizedNow = now + (run.serverTimeOffsetMs || 0);
   const secondsRemaining = Math.max(0, Math.ceil((stepStartedAt + timerSeconds * 1000 - synchronizedNow) / 1000));
+
+  async function persistProgress(progressRun) {
+    if (!progressRun.participant || !onProgress) return;
+    setProgressSaving(true);
+    setProgressError('');
+    try {
+      await onProgress(progressRun);
+    } catch (error) {
+      setProgressError(error.message);
+    } finally {
+      setProgressSaving(false);
+    }
+  }
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 250);
@@ -79,8 +97,9 @@ export default function Simulator({ scenario, run, onRunChange, onFinish, onExit
       pendingOptionId: null,
     };
     onRunChange(expiredRun);
-    timeoutHandle.current = window.setTimeout(() => {
+    timeoutHandle.current = window.setTimeout(async () => {
       timeoutHandle.current = null;
+      await persistProgress(expiredRun);
       setTimedOut(false);
       if (recommended.next) {
         onRunChange({
@@ -93,7 +112,7 @@ export default function Simulator({ scenario, run, onRunChange, onFinish, onExit
         onFinish(expiredRun);
       }
     }, 1200);
-  }, [now, onFinish, onRunChange, run, scenario.id, secondsRemaining, selectedId, step, timedOut]);
+  }, [now, onFinish, onProgress, onRunChange, run, scenario.id, secondsRemaining, selectedId, step, timedOut]);
 
   if (!step) {
     return (
@@ -106,8 +125,6 @@ export default function Simulator({ scenario, run, onRunChange, onFinish, onExit
 
   const selectedOption = step.options.find((option) => option.id === selectedId);
   const pathPosition = run.history.filter((entry) => entry.scenarioId === scenario.id).length + 1;
-  const stepDeltas = selectedOption?.impact;
-
   function chooseOption(option) {
     if (selectedId) return;
     setSelectedId(option.id);
@@ -128,7 +145,7 @@ export default function Simulator({ scenario, run, onRunChange, onFinish, onExit
       ]),
     );
     const correctAnswers = run.correctAnswers + Number(option.recommended);
-    onRunChange({
+    const updatedRun = {
       ...run,
       scores,
       accuracyScore: calculateAccuracyScore(history, run.totalQuestions),
@@ -136,7 +153,9 @@ export default function Simulator({ scenario, run, onRunChange, onFinish, onExit
       history,
       pendingNext: option.next,
       pendingOptionId: option.id,
-    });
+    };
+    onRunChange(updatedRun);
+    void persistProgress(updatedRun);
   }
 
   function continueScenario() {
@@ -177,9 +196,8 @@ export default function Simulator({ scenario, run, onRunChange, onFinish, onExit
             label={item.label}
             short={item.short}
             color={item.color}
-            value={item.key === 'accuracyScore' ? run.accuracyScore : run.scores[item.key]}
-            impact={item.key === 'accuracyScore' ? undefined : stepDeltas?.[item.key]}
-            footerText={item.key === 'accuracyScore' ? `${run.correctAnswers}/${run.totalQuestions} CORRECTES` : undefined}
+            value={run.accuracyScore}
+            footerText={`${run.correctAnswers}/${run.totalQuestions} CORRECTES`}
           />
         ))}
       </section>
@@ -250,10 +268,34 @@ export default function Simulator({ scenario, run, onRunChange, onFinish, onExit
                     </span>
                   ))}
                 </div>
-                <button className="button button-primary" onClick={continueScenario}>
-                  {selectedOption.next ? 'Étape suivante' : 'Voir mon bilan'} <span>→</span>
+                <button className="button button-primary" disabled={progressSaving} onClick={continueScenario}>
+                  {progressSaving ? 'Actualisation du classement…' : selectedOption.next ? 'Étape suivante' : 'Voir mon bilan'} <span>→</span>
                 </button>
               </div>
+            </section>
+          )}
+
+          {run.participant && (selectedId || timedOut) && (
+            <section className="live-leaderboard" aria-live="polite">
+              <div className="live-leaderboard-heading">
+                <h3>Classement actuel</h3>
+                <span>APRÈS {run.history.length}/{run.totalQuestions} QUESTIONS</span>
+              </div>
+              {leaderboard.length === 0
+                ? <p>Le classement apparaîtra dès que des participants auront répondu.</p>
+                : (
+                  <ol>
+                    {rankLeaderboardEntries(leaderboard).slice(0, 5).map((entry) => (
+                      <li key={entry.username}>
+                        <span>#{entry.rank} {entry.username}</span>
+                        <strong>{entry.score}%</strong>
+                        <small>{formatElapsedTime(entry.elapsedMs)}</small>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              {progressSaving && <small className="live-leaderboard-status">Mise à jour des résultats partagés…</small>}
+              {progressError && <p className="live-leaderboard-error" role="alert">Classement provisoire indisponible : {progressError}</p>}
             </section>
           )}
         </main>

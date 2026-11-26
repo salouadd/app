@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { defaultScenarios } from './data/scenarios.js';
 import CheckIn from './components/CheckIn.jsx';
 import ResultSummary from './components/ResultSummary.jsx';
@@ -70,6 +70,7 @@ export default function App() {
   const [organizerAuthorized, setOrganizerAuthorized] = useState(false);
   const [notice, setNotice] = useState('');
   const [leaderboard, setLeaderboard] = useState([]);
+  const progressSaveQueue = useRef(Promise.resolve());
   const scenarios = useMemo(
     () => [...defaultScenarios, ...(organizerAuthorized ? customScenarios : [])],
     [customScenarios, organizerAuthorized],
@@ -133,6 +134,43 @@ export default function App() {
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || 'Impossible de créer le check-in.');
     return { username: body.username, checkInId: body.checkInId, sessionId: body.sessionId };
+  }
+
+  function saveParticipantProgress(progressRun) {
+    if (!progressRun.participant) return Promise.resolve();
+    const request = progressSaveQueue.current.then(async () => {
+      const startedAtMs = Date.parse(progressRun.startedAt);
+      const elapsedMs = Number.isFinite(startedAtMs)
+        ? Math.max(0, Date.parse(getCurrentRunTime(progressRun)) - startedAtMs)
+        : 0;
+      const response = await fetch('/api/progress', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          checkInId: progressRun.participant.checkInId,
+          sessionId: progressRun.participant.sessionId,
+          scores: progressRun.scores,
+          score: progressRun.accuracyScore,
+          elapsedMs,
+          scenarioIds: progressRun.scenarioIds,
+          history: progressRun.history,
+          decisionCount: progressRun.history.length,
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || 'Impossible d’enregistrer la progression.');
+
+      const leaderboardResponse = await fetch(`/api/leaderboard?sessionId=${encodeURIComponent(progressRun.participant.sessionId)}`);
+      const leaderboardBody = await leaderboardResponse.json();
+      if (!leaderboardResponse.ok) throw new Error(leaderboardBody.error || 'Impossible d’actualiser le classement.');
+      setLeaderboard(leaderboardBody.leaderboard);
+    });
+    progressSaveQueue.current = request.catch(() => {});
+    return request.catch((error) => {
+      console.error('Impossible de publier la progression dans le classement.', error);
+      setNotice(`Classement provisoire non actualisé : ${error.message}`);
+      throw error;
+    });
   }
 
   function startParticipantRun(participant, activeSession) {
@@ -270,7 +308,9 @@ export default function App() {
             key={`${activeScenario.id}-${run.scenarioIndex}`}
             scenario={activeScenario}
             run={run}
+            leaderboard={leaderboard}
             onRunChange={(nextRun) => setSession((current) => ({ ...current, run: nextRun }))}
+            onProgress={saveParticipantProgress}
             onFinish={(completedRun) => finishScenario(completedRun || run)}
             onExit={returnToCatalog}
           />
