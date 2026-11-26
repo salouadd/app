@@ -254,11 +254,10 @@ export default function Simulator({ scenario, run, onProgress, onRunChange, onFi
             <p className="briefing-context">{briefingContext}</p>
             {step.recovery && run.recovery && (
               <div className="recovery-attempt-note">
-                QUESTION DE CORRECTION {run.recovery.attempts + 1}/{3} · UNE BONNE RÉPONSE VOUS RAMÈNE AU PARCOURS
+                QUESTION DE SUIVI · TENTATIVE {run.recovery.attempts + 1}/{3}
               </div>
             )}
             <div className="alert-strip"><span className="alert-icon">!</span><div><span className="micro-label">ALERTE SYSTÈME</span><strong>{step.alert}</strong></div></div>
-            <div className="constraint-line"><span className="constraint-icon">◷</span><span>{step.constraint}</span></div>
           </section>
 
           <label className="reflection-field">
@@ -289,7 +288,7 @@ export default function Simulator({ scenario, run, onProgress, onRunChange, onFi
                     disabled={Boolean(selectedId) || timedOut}
                   >
                     <span className="choice-letter">{String.fromCharCode(65 + index)}</span>
-                    <span className="choice-content"><strong>{option.label}</strong><small>{option.detail}</small></span>
+                    <span className="choice-content"><strong>{option.label}</strong></span>
                     <span className="choice-arrow">{isSelected ? '✓' : '↗'}</span>
                   </button>
                 );
@@ -311,6 +310,7 @@ export default function Simulator({ scenario, run, onProgress, onRunChange, onFi
               </div>
               <p>{selectedOption.consequence}</p>
               <div className="bias-note"><span>↳</span>{selectedOption.bias}</div>
+              <div className="constraint-line"><span className="constraint-icon">◷</span><span>{step.constraint}</span></div>
               <div className="consequence-footer">
                 <div className="impact-list">
                   <span className={step.recovery ? 'impact-neutral' : scoreGain > 0 ? 'impact-up' : 'impact-neutral'}>

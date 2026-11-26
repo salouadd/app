@@ -31,27 +31,24 @@ function scenario({ id, title, domain, difficulty, duration, objective, descript
       recoveryVariants.push({
         ...recoveryTemplate,
         id: variantId,
-        title: `Comment corriger « ${option.label} » ?`,
-        context: `Dans « ${sourceStep.title} », vous avez choisi « ${option.label} ». ${option.consequence} Quelle action permet de réduire cet impact et de reprendre le parcours de façon maîtrisée ?`,
-        alert: `Conséquence à traiter : ${option.consequence}`,
+        title: `Suite à votre choix : ${option.label}`,
+        context: 'La situation évolue après cette décision. Quelle est votre prochaine action ?',
+        alert: 'Situation mise à jour',
         options: [
           {
             ...recommendedOption,
             id: `${variantId}-recommended`,
-            label: `Corriger : ${recommendedOption.label}`,
             next: null,
           },
           {
             ...option,
             id: `${variantId}-maintain-choice`,
-            label: `Maintenir votre choix : ${option.label}`,
             recommended: false,
             next: null,
           },
           {
             ...alternativeOption,
             id: `${variantId}-alternative`,
-            label: `Choisir plutôt : ${alternativeOption.label}`,
             recommended: false,
             next: null,
           },
