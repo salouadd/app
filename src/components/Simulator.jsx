@@ -77,10 +77,34 @@ export default function Simulator({ scenario, run, onProgress, onRunChange, onFi
   }, []);
 
   useEffect(() => {
-    if (!step || secondsRemaining > 0 || selectedId || timedOut) return;
+    if (!step || secondsRemaining > 0 || timedOut) return;
     const currentTimeoutKey = `${scenario.id}:${step.id}:${run.history.length}`;
     if (timeoutKey.current === currentTimeoutKey) return;
     timeoutKey.current = currentTimeoutKey;
+
+    if (selectedId) {
+      timeoutHandle.current = window.setTimeout(() => {
+        timeoutHandle.current = null;
+        setSelectedId(null);
+        setNow(Date.now());
+        if (!run.pendingNext) {
+          onFinish(run);
+          return;
+        }
+        onRunChange({
+          ...run,
+          stepId: run.pendingNext,
+          recovery: run.pendingRecovery,
+          stepStartedAt: getCurrentRunTime(run),
+          pendingNext: null,
+          pendingRecovery: null,
+          pendingOptionId: null,
+          pendingReflection: '',
+        });
+      }, 1200);
+      return;
+    }
+
     setTimedOut(true);
 
     const recommended = step.options.find((option) => option.recommended) ?? step.options[0];
@@ -106,10 +130,11 @@ export default function Simulator({ scenario, run, onProgress, onRunChange, onFi
       pendingReflection: '',
     };
     onRunChange(expiredRun);
-    timeoutHandle.current = window.setTimeout(async () => {
+    void persistProgress(expiredRun);
+    timeoutHandle.current = window.setTimeout(() => {
       timeoutHandle.current = null;
-      await persistProgress(expiredRun);
       setTimedOut(false);
+      timeoutKey.current = '';
       if (transition.nextStepId) {
         onRunChange({
           ...expiredRun,
@@ -191,6 +216,11 @@ export default function Simulator({ scenario, run, onProgress, onRunChange, onFi
 
   function continueScenario() {
     if (!selectedOption) return;
+    if (timeoutHandle.current) {
+      window.clearTimeout(timeoutHandle.current);
+      timeoutHandle.current = null;
+    }
+    timeoutKey.current = '';
     setSelectedId(null);
     setNow(Date.now());
     if (!run.pendingNext) {
@@ -299,6 +329,11 @@ export default function Simulator({ scenario, run, onProgress, onRunChange, onFi
           {timedOut && (
             <div className="timer-expired" aria-live="assertive">
               Temps écoulé — aucune réponse enregistrée. Passage à la question suivante…
+            </div>
+          )}
+          {selectedOption && secondsRemaining === 0 && (
+            <div className="timer-expired" aria-live="polite">
+              Temps écoulé — passage automatique à la suite…
             </div>
           )}
 

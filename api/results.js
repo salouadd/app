@@ -80,7 +80,26 @@ export default async function handler(request, response) {
       decision_count: verification.mainQuestionCount,
     });
     if (resultError?.code === '23505') {
-      response.status(409).json({ error: 'Un résultat a déjà été enregistré pour ce check-in.' });
+      const { data: existingResult, error: existingResultError } = await database
+        .from('quiz_results')
+        .select('session_id, score, scores, decision_count, elapsed_ms')
+        .eq('check_in_id', checkInId)
+        .single();
+      if (existingResultError) throw existingResultError;
+      const matchesExisting = existingResult.session_id === participant.session_id &&
+        existingResult.score === verification.accuracyScore &&
+        existingResult.decision_count === verification.mainQuestionCount &&
+        metricKeys.every((key) => existingResult.scores[key] === verification.scores[key]);
+      if (!matchesExisting) {
+        response.status(409).json({ error: 'Un résultat différent a déjà été enregistré pour ce check-in.' });
+        return;
+      }
+      response.status(200).json({
+        username: participant.username,
+        score: existingResult.score,
+        elapsedMs: existingResult.elapsed_ms,
+        alreadyRecorded: true,
+      });
       return;
     }
     if (resultError) throw resultError;

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { defaultScenarios } from './data/scenarios.js';
 import CheckIn from './components/CheckIn.jsx';
+import GroupWaitingRoom from './components/GroupWaitingRoom.jsx';
 import ResultSummary from './components/ResultSummary.jsx';
 import ScenarioBuilder from './components/ScenarioBuilder.jsx';
 import Simulator from './components/Simulator.jsx';
@@ -27,7 +28,7 @@ function initialRun() {
   }
   const saved = readStorage(STORAGE_KEYS.progress, null);
   if (!saved || typeof saved !== 'object' || !saved.run?.participant ||
-      !['simulation', 'results'].includes(saved.screen)) {
+      !['simulation', 'waiting', 'results'].includes(saved.screen)) {
     return { screen: 'catalog', run: null };
   }
   const knownScenarioIds = new Set(defaultScenarios.map((scenario) => scenario.id));
@@ -112,6 +113,25 @@ export default function App() {
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || 'Impossible de créer le check-in.');
     return { username: body.username, checkInId: body.checkInId, sessionId: body.sessionId };
+  }
+
+  async function saveFinalResult(resultRun) {
+    const response = await fetch('/api/results', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        checkInId: resultRun.participant.checkInId,
+        sessionId: resultRun.participant.sessionId,
+        scores: resultRun.scores,
+        score: resultRun.accuracyScore,
+        elapsedMs: resultRun.elapsedMs,
+        scenarioIds: resultRun.scenarioIds,
+        history: resultRun.history,
+        decisionCount: resultRun.history.length,
+      }),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || 'Impossible d’enregistrer le résultat.');
   }
 
   function saveParticipantProgress(progressRun) {
@@ -204,31 +224,34 @@ export default function App() {
       return;
     }
 
+    let resultSaved = !completedRun.participant;
     if (completedRun.participant) {
       try {
-        const response = await fetch('/api/results', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            checkInId: completedRun.participant.checkInId,
-            sessionId: completedRun.participant.sessionId,
-            scores: resultRun.scores,
-            score: resultRun.accuracyScore,
-            elapsedMs: resultRun.elapsedMs,
-            scenarioIds: resultRun.scenarioIds,
-            history: resultRun.history,
-            decisionCount: resultRun.history.length,
-          }),
-        });
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.error || 'Impossible d’enregistrer le résultat.');
+        await saveFinalResult(resultRun);
+        resultSaved = true;
       } catch (error) {
         console.error('Impossible d’enregistrer le résultat de la session.', error);
         setNotice(`Résultat non enregistré : ${error.message}`);
       }
     }
-    setSession({ screen: 'results', run: resultRun });
+    setSession({
+      screen: completedRun.participant ? 'waiting' : 'results',
+      run: { ...resultRun, resultSaved },
+    });
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  async function retryFinalResult(resultRun) {
+    try {
+      await saveFinalResult(resultRun);
+      setNotice('');
+      setSession((current) => current.screen === 'waiting'
+        ? { ...current, run: { ...current.run, resultSaved: true } }
+        : current);
+    } catch (error) {
+      setNotice(`Résultat non enregistré : ${error.message}`);
+      throw error;
+    }
   }
 
   function replay() {
@@ -264,12 +287,14 @@ export default function App() {
         <a className="brand" href="#" onClick={(event) => {
           event.preventDefault();
           if (screen === 'simulation') confirmSimulationExit();
-          else returnToCatalog();
+          else if (screen !== 'waiting') returnToCatalog();
         }}>
           <IconMark /><span>DECISION<span className="brand-light">LAB</span></span><span className="brand-version">SIM / 01</span>
         </a>
-        {screen === 'simulation' ? (
-          <div className="main-nav simulation-nav" aria-label="Navigation principale">QUIZ EN COURS</div>
+        {screen === 'simulation' || screen === 'waiting' ? (
+          <div className="main-nav simulation-nav" aria-label="Navigation principale">
+            {screen === 'waiting' ? 'ATTENTE DU GROUPE' : 'QUIZ EN COURS'}
+          </div>
         ) : (
           <nav className="main-nav" aria-label="Navigation principale">
             <button className={activeTab === 'catalog' ? 'nav-item active' : 'nav-item'} onClick={() => { returnToCatalog(); setActiveTab('catalog'); }}>Scénarios</button>
@@ -302,6 +327,14 @@ export default function App() {
             onProgress={saveParticipantProgress}
             onFinish={(completedRun) => finishScenario(completedRun || run)}
             onExit={confirmSimulationExit}
+          />
+        ) : screen === 'waiting' && run ? (
+          <GroupWaitingRoom
+            run={run}
+            onComplete={() => setSession((current) => current.screen === 'waiting'
+              ? { screen: 'results', run: current.run }
+              : current)}
+            onRetryResult={retryFinalResult}
           />
         ) : screen === 'results' && resultScenarios.length > 0 && run ? (
           <ResultSummary

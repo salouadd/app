@@ -5,7 +5,23 @@ export default async function handler(request, response) {
   try {
     const database = getSupabase();
     if (request.method === 'GET') {
-      const session = await getActiveSession(database);
+      const requestedSessionId = typeof request.query?.sessionId === 'string' ? request.query.sessionId : null;
+      let session;
+      if (requestedSessionId) {
+        const { data, error } = await database
+          .from('quiz_sessions')
+          .select('id, status, started_at, created_at')
+          .eq('id', requestedSessionId)
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) {
+          response.status(404).json({ error: 'Session introuvable.' });
+          return;
+        }
+        session = data;
+      } else {
+        session = await getActiveSession(database);
+      }
       response.status(200).json({
         session: {
           id: session.id,
