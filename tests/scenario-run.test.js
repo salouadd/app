@@ -131,6 +131,22 @@ test('every shared scenario has a validated recovery branch and keeps its main q
   assert.equal(validateRun(defaultScenarios.map((scenario) => scenario.id), invalidHistory, defaultScenarios).valid, false);
 });
 
+test('different incorrect choices open distinct recovery questions in every scenario', () => {
+  for (const scenario of defaultScenarios) {
+    const incorrectOptions = scenario.steps
+      .filter((step) => !step.recovery)
+      .flatMap((step) => step.options.filter((option) => !option.recommended));
+    const recoveryQuestions = incorrectOptions.map((option) =>
+      scenario.steps.find((step) => step.id === option.recoveryStepId));
+
+    assert.equal(new Set(recoveryQuestions.map((step) => step.id)).size, incorrectOptions.length);
+    assert.equal(new Set(recoveryQuestions.map((step) => step.title)).size, incorrectOptions.length);
+    assert.equal(new Set(recoveryQuestions.map((step) => step.options.map((option) => option.label).join('|'))).size, incorrectOptions.length);
+    assert.ok(recoveryQuestions.every((step) => step.recovery));
+    assert.ok(recoveryQuestions.every((step) => step.options.filter((option) => option.recommended).length === 1));
+  }
+});
+
 test('recovery questions repeat up to three times without inflating the main decision score', () => {
   const history = createHistory(defaultScenarios, (scenario, step) => (
     step.recovery
@@ -161,7 +177,7 @@ test('a recovery after the final main decision rejoins the next scenario instead
     true,
   );
 
-  assert.equal(branch.nextStepId, scenario.recoveryStepId);
+  assert.equal(branch.nextStepId, wrongOption.recoveryStepId);
   assert.equal(correction.nextStepId, null);
   assert.equal(correction.recovery, null);
 });

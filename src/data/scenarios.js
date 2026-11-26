@@ -17,6 +17,49 @@ function question(id, title, context, alert, constraint, options, routeLabel = n
 }
 
 function scenario({ id, title, domain, difficulty, duration, objective, description, accent, steps, questionCount, recoveryStepId }) {
+  const recoveryTemplate = steps.find((step) => step.id === recoveryStepId);
+  const recoveryStepIdsByOption = new Map();
+  const recoveryVariants = [];
+
+  for (const sourceStep of steps) {
+    if (sourceStep.id === recoveryStepId) continue;
+    for (const option of sourceStep.options.filter((item) => !item.recommended)) {
+      const variantId = `${recoveryStepId}-after-${option.id}`;
+      const recommendedOption = sourceStep.options.find((item) => item.recommended);
+      const alternativeOption = sourceStep.options.find((item) => !item.recommended && item.id !== option.id) ?? option;
+      recoveryStepIdsByOption.set(option.id, variantId);
+      recoveryVariants.push({
+        ...recoveryTemplate,
+        id: variantId,
+        title: `Comment corriger « ${option.label} » ?`,
+        context: `Dans « ${sourceStep.title} », vous avez choisi « ${option.label} ». ${option.consequence} Quelle action permet de réduire cet impact et de reprendre le parcours de façon maîtrisée ?`,
+        alert: `Conséquence à traiter : ${option.consequence}`,
+        options: [
+          {
+            ...recommendedOption,
+            id: `${variantId}-recommended`,
+            label: `Corriger : ${recommendedOption.label}`,
+            next: null,
+          },
+          {
+            ...option,
+            id: `${variantId}-maintain-choice`,
+            label: `Maintenir votre choix : ${option.label}`,
+            recommended: false,
+            next: null,
+          },
+          {
+            ...alternativeOption,
+            id: `${variantId}-alternative`,
+            label: `Choisir plutôt : ${alternativeOption.label}`,
+            recommended: false,
+            next: null,
+          },
+        ],
+      });
+    }
+  }
+
   function getMainPathNext(index) {
     const recommended = steps[index].options.find((option) => option.recommended);
     if (recommended?.next !== undefined && recommended.next !== recoveryStepId) return recommended.next;
@@ -34,16 +77,26 @@ function scenario({ id, title, domain, difficulty, duration, objective, descript
     accent,
     questionCount: questionCount ?? steps.length,
     recoveryStepId,
-    steps: steps.map((step, index) => ({
-      ...step,
-      recovery: step.id === recoveryStepId,
-      options: step.options.map((option) => {
-        if (step.id === recoveryStepId) return { ...option, next: null };
-        const next = getMainPathNext(index);
-        if (!option.recommended) return { ...option, next: recoveryStepId, rejoin: next };
-        return { ...option, next: option.next !== undefined ? option.next : next };
-      }),
-    })),
+    steps: [
+      ...steps.map((step, index) => ({
+        ...step,
+        recovery: step.id === recoveryStepId,
+        options: step.options.map((option) => {
+          if (step.id === recoveryStepId) return { ...option, next: null };
+          const next = getMainPathNext(index);
+          if (!option.recommended) {
+            const branchStepId = recoveryStepIdsByOption.get(option.id);
+            return { ...option, next: branchStepId, recoveryStepId: branchStepId, rejoin: next };
+          }
+          return { ...option, next: option.next !== undefined ? option.next : next };
+        }),
+      })),
+      ...recoveryVariants.map((step) => ({
+        ...step,
+        recovery: true,
+        options: step.options.map((option) => ({ ...option, next: null })),
+      })),
+    ],
   };
 }
 

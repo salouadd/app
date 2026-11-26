@@ -44,7 +44,7 @@ export function getDecisionTransition(scenario, step, option, recovery, answered
 
   if (!answered || !option.recommended) {
     return {
-      nextStepId: scenario.recoveryStepId,
+      nextStepId: answered ? option.recoveryStepId ?? scenario.recoveryStepId : scenario.recoveryStepId,
       recovery: {
         returnStepId: option.rejoin !== undefined ? option.rejoin : option.next ?? null,
         attempts: 0,
