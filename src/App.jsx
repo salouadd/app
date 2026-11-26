@@ -30,6 +30,11 @@ function initialRun() {
       !['simulation', 'results'].includes(saved.screen)) {
     return { screen: 'catalog', run: null };
   }
+  const knownScenarioIds = new Set(defaultScenarios.map((scenario) => scenario.id));
+  if (!Array.isArray(saved.run.scenarioIds) ||
+      saved.run.scenarioIds.some((id) => !knownScenarioIds.has(id))) {
+    return { screen: 'catalog', run: null };
+  }
   return saved;
 }
 
@@ -155,6 +160,11 @@ export default function App() {
   }
 
   async function finishScenario(completedRun) {
+    const startedAtMs = Date.parse(completedRun.startedAt);
+    const elapsedMs = Number.isFinite(startedAtMs)
+      ? Math.max(0, Date.parse(getCurrentRunTime(completedRun)) - startedAtMs)
+      : 0;
+    const resultRun = { ...completedRun, elapsedMs };
     const nextScenarioId = completedRun.scenarioIds[completedRun.scenarioIndex + 1];
     const nextScenario = scenarios.find((scenario) => scenario.id === nextScenarioId);
     if (nextScenario) {
@@ -182,10 +192,12 @@ export default function App() {
           body: JSON.stringify({
             checkInId: completedRun.participant.checkInId,
             sessionId: completedRun.participant.sessionId,
-            scores: completedRun.scores,
-            scenarioIds: completedRun.scenarioIds,
-            history: completedRun.history,
-            decisionCount: completedRun.history.length,
+            scores: resultRun.scores,
+            score: resultRun.accuracyScore,
+            elapsedMs: resultRun.elapsedMs,
+            scenarioIds: resultRun.scenarioIds,
+            history: resultRun.history,
+            decisionCount: resultRun.history.length,
           }),
         });
         const body = await response.json();
@@ -195,7 +207,7 @@ export default function App() {
         setNotice(`Résultat non enregistré : ${error.message}`);
       }
     }
-    setSession({ screen: 'results', run: completedRun });
+    setSession({ screen: 'results', run: resultRun });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 

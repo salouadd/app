@@ -1,730 +1,280 @@
+function answer(id, label, detail, consequence, bias, recommended, impact) {
+  return {
+    id,
+    label,
+    detail,
+    consequence,
+    bias,
+    impact: impact || (recommended
+      ? { security: 10, availability: 8, logic: 10 }
+      : { security: -10, availability: -6, logic: -8 }),
+    recommended,
+  };
+}
+
+function question(id, title, context, alert, constraint, options) {
+  return { id, title, context, alert, constraint, options };
+}
+
+function scenario({ id, title, domain, difficulty, duration, objective, description, accent, steps }) {
+  return {
+    id,
+    title,
+    domain,
+    difficulty,
+    duration,
+    objective,
+    description,
+    accent,
+    steps: steps.map((step, index) => ({
+      ...step,
+      options: step.options.map((option) => ({
+        ...option,
+        next: steps[index + 1]?.id ?? null,
+      })),
+    })),
+  };
+}
+
 export const defaultScenarios = [
-  {
-    id: 'nac-failover',
-    title: 'Le NAC tombe à 8h30',
-    domain: 'Cybersécurité & réseaux',
+  scenario({
+    id: 'zero-trust-onboarding',
+    title: 'Du réseau plat au Zero Trust',
+    domain: '802.1X · RADIUS · VLAN 10/11',
     difficulty: 'Avancé',
     duration: '12 min',
-    objective: 'Arbitrer le basculement PCA/PRA sans sacrifier la continuité ni le contrôle réseau.',
-    description:
-      'Panne critique du serveur central NAC (PacketFence) à 8h30 : gérer le basculement PCA/PRA sans paralyser l’entreprise ni ouvrir une brèche réseau.',
+    objective: 'Contrôler l’accès dès le port réseau et n’autoriser que les identités et équipements conformes.',
+    description: 'Un port non contrôlé du réseau plat VLAN 10 a laissé apparaître un équipement inconnu. Concevoir une réponse défensive fondée sur 802.1X et des politiques RADIUS.',
     accent: 'cyan',
     steps: [
-      {
-        id: 'nac-triage',
-        title: 'Confirmer l’étendue de la panne',
-        context:
-          'À 8h30, le serveur central NAC ne répond plus. Les équipements déjà authentifiés communiquent encore, mais les nouvelles connexions échouent sur plusieurs sites.',
-        alert: 'NAC central indisponible · nouvelles authentifications en échec',
-        constraint: 'Décision attendue en 3 minutes',
-        options: [
-          {
-            id: 'nac-health',
-            label: 'Vérifier l’état des nœuds, des services et du périmètre affecté',
-            detail: 'Établir rapidement si la panne est locale ou généralisée avant de modifier la politique réseau.',
-            impact: { security: 8, availability: 5, logic: 12 },
-            consequence:
-              'Vous confirmez le périmètre avant d’agir. Cette vérification ciblée évite de confondre une panne du plan de contrôle avec une rupture générale du réseau.',
-            bias: 'Biais évité : agir sous pression sans avoir vérifié l’hypothèse initiale.',
-            next: 'nac-route',
-            recommended: true,
-          },
-          {
-            id: 'nac-open',
-            label: 'Passer tous les ports en accès ouvert pour rétablir les connexions',
-            detail: 'La disponibilité remonte vite, mais l’accès n’est plus soumis au contrôle habituel.',
-            impact: { security: -24, availability: 22, logic: -12 },
-            consequence:
-              'L’ouverture globale masque l’incident d’authentification en supprimant le contrôle au lieu de rétablir le service. Des équipements inconnus pourraient rejoindre des segments sensibles.',
-            bias: 'Biais commis : privilégier la disponibilité immédiate sans borner le risque.',
-            next: 'nac-route',
-            recommended: false,
-          },
-          {
-            id: 'nac-stop',
-            label: 'Bloquer toutes les nouvelles connexions sur tous les sites',
-            detail: 'Le contrôle est conservé, au prix d’un arrêt étendu des activités.',
-            impact: { security: 12, availability: -22, logic: -5 },
-            consequence:
-              'La mesure contient les nouvelles admissions mais dépasse le périmètre confirmé et pénalise les sites encore sains.',
-            bias: 'Biais commis : traiter toute incertitude comme une menace uniforme.',
-            next: 'nac-route',
-            recommended: false,
-          },
+      question(
+        'zt-diagnose',
+        'Qualifier l’accès non autorisé',
+        'Un équipement inconnu est apparu sur un port libre du switch. Les journaux indiquent une attribution DHCP et un service web de test visible sur le segment. Évite de reproduire l’accès : il faut établir le périmètre à partir des traces disponibles.',
+        'Port d’accès sans authentification · segment partagé',
+        'Confirmer les faits avant toute modification large',
+        [
+          answer('zt-correlate', 'Corréler port, adresse MAC, bail DHCP et événements NAC, puis contenir ce seul port', 'Les journaux du switch, DHCP et NAC donnent une chronologie défensive.', 'Le point d’entrée est isolé sans perturber les équipements légitimes du VLAN.', 'Biais évité : modifier tout le réseau à partir d’un seul signal.', true),
+          answer('zt-disable-vlan', 'Désactiver immédiatement tout le VLAN 10', 'La mesure est large alors que le périmètre observé est un seul port.', 'La disponibilité du segment est interrompue sans résoudre la cause du défaut de contrôle.', 'Biais commis : confondre ampleur de la mesure et précision.', false, { security: 12, availability: -24, logic: -12 }),
+          answer('zt-ignore', 'Conserver le port ouvert car aucune panne utilisateur n’est signalée', 'L’absence de plainte ne démontre pas que l’équipement est autorisé.', 'L’accès inconnu reste possible et les traces ne sont pas exploitées.', 'Biais commis : prendre l’absence d’impact visible pour une preuve de sûreté.', false, { security: -20, availability: 2, logic: -12 }),
         ],
-      },
-      {
-        id: 'nac-route',
-        title: 'Choisir une stratégie de continuité',
-        context:
-          'Le diagnostic confirme que le nœud principal est indisponible. Les politiques sont sauvegardées et le nœud de secours n’a pas encore été activé.',
-        alert: 'Nœud secondaire disponible · état de réplication à confirmer',
-        constraint: 'Les politiques doivent rester cohérentes entre les sites',
-        options: [
-          {
-            id: 'nac-standby',
-            label: 'Valider la réplication puis basculer le service vers le nœud de secours',
-            detail: 'Le basculement suit le PCA existant et garde une décision contrôlable.',
-            impact: { security: 9, availability: 15, logic: 12 },
-            consequence:
-              'Vous réutilisez un mécanisme préparé et vérifiez sa cohérence avant activation : le rétablissement reste auditable et les politiques ne sont pas improvisées.',
-            bias: 'Biais évité : remplacer un plan testé par une solution de fortune.',
-            next: 'nac-recovery',
-            recommended: true,
-          },
-          {
-            id: 'nac-local',
-            label: 'Appliquer une politique temporaire locale, limitée aux équipements connus',
-            detail: 'Un compromis borné peut préserver les services prioritaires pendant le diagnostic.',
-            impact: { security: 2, availability: 9, logic: 6 },
-            consequence:
-              'Une politique de secours limitée peut convenir si son périmètre, sa durée et son retour arrière sont explicitement contrôlés.',
-            bias: 'Point de vigilance : formaliser l’expiration de la mesure pour éviter qu’elle ne devienne permanente.',
-            next: 'nac-recovery',
-            recommended: false,
-          },
-          {
-            id: 'nac-restart',
-            label: 'Redémarrer immédiatement le serveur principal sans vérifier le secours',
-            detail: 'C’est une action familière, mais elle ne traite pas la continuité pendant l’incertitude.',
-            impact: { security: 0, availability: -9, logic: -8 },
-            consequence:
-              'Le redémarrage peut prolonger l’interruption et détruire des indices utiles sans garantie de retour du service.',
-            bias: 'Biais commis : confondre action rapide et réduction du risque.',
-            next: 'nac-recovery',
-            recommended: false,
-          },
+      ),
+      question(
+        'zt-port-control',
+        'Choisir le contrôle avant attribution réseau',
+        'Le switch apprend une adresse MAC dès qu’un équipement se connecte. L’objectif est de demander une authentification avant d’accorder un accès de production. Le filtrage MAC seul ne prouve pas l’identité et peut être usurpé.',
+        'Aucune authentification de port · accès avant attribution contrôlée',
+        'Choisir un mécanisme maintenable avec validation du serveur RADIUS',
+        [
+          answer('zt-dot1x', 'Déployer 802.1X avec une méthode EAP validée et certificats serveur vérifiés', 'Le port attend la décision RADIUS avant d’accorder l’accès prévu par la politique.', 'L’authentification est liée à une identité et l’échange protège contre un serveur d’authentification non vérifié.', 'Biais évité : confondre une adresse matérielle avec une identité.', true),
+          answer('zt-mac-filter', 'S’appuyer uniquement sur une liste d’adresses MAC autorisées', 'La liste est simple à démarrer, mais ne fournit pas une authentification forte.', 'Une adresse copiée peut contourner le contrôle et la gestion manuelle devient fragile.', 'Biais commis : assimiler identifiant observable et preuve d’identité.', false, { security: -12, availability: 3, logic: -9 }),
+          answer('zt-open-fallback', 'Autoriser tout port si le serveur RADIUS ne répond pas', 'Ce comportement de secours transforme une panne de contrôle en accès ouvert.', 'Le service paraît disponible, mais les équipements inconnus peuvent rejoindre le réseau.', 'Biais commis : privilégier la disponibilité sans borner le mode dégradé.', false, { security: -24, availability: 14, logic: -14 }),
         ],
-      },
-      {
-        id: 'nac-recovery',
-        title: 'Protéger les services prioritaires',
-        context:
-          'Le service de secours est prêt ou une mesure locale limitée est active. Les équipes métiers signalent des besoins urgents pour la production et les postes d’administration.',
-        alert: 'Priorités métier reçues · changements à tracer',
-        constraint: 'Éviter toute exception réseau sans responsable ni échéance',
-        options: [
-          {
-            id: 'nac-priorities',
-            label: 'Prioriser les flux indispensables et consigner chaque exception avec une échéance',
-            detail: 'Les exceptions restent limitées, attribuées et réversibles.',
-            impact: { security: 8, availability: 11, logic: 12 },
-            consequence:
-              'La continuité est ciblée sur les services essentiels. La traçabilité et l’expiration des exceptions facilitent la revue puis le retour à la politique normale.',
-            bias: 'Biais évité : laisser une exception d’urgence devenir une règle permanente.',
-            next: 'nac-validate',
-            recommended: true,
-          },
-          {
-            id: 'nac-everyone',
-            label: 'Autoriser tous les postes du VLAN Production le temps de l’incident',
-            detail: 'La solution est simple à communiquer, mais élargit l’exception au-delà du besoin.',
-            impact: { security: -17, availability: 12, logic: -9 },
-            consequence:
-              'Une appartenance au VLAN ne prouve pas l’identité ni l’état de conformité du poste. L’exception peut transformer une panne limitée en perte de contrôle.',
-            bias: 'Biais commis : assimiler emplacement réseau et confiance.',
-            next: 'nac-validate',
-            recommended: false,
-          },
-          {
-            id: 'nac-wait',
-            label: 'Attendre la réparation complète avant de rétablir les services',
-            detail: 'L’exposition reste faible, mais aucune priorité métier n’est prise en compte.',
-            impact: { security: 6, availability: -14, logic: -4 },
-            consequence:
-              'L’attente réduit les changements mais prolonge inutilement l’impact si des services essentiels pouvaient être rétablis de façon bornée.',
-            bias: 'Biais commis : confondre prudence et absence d’arbitrage.',
-            next: 'nac-validate',
-            recommended: false,
-          },
+      ),
+      question(
+        'zt-radius-policy',
+        'Définir la décision RADIUS',
+        'La politique doit distinguer un compte employé vérifié, tel que `employee@test.local`, d’un équipement inconnu. Le VLAN 11 est réservé à la production ; les demandes non reconnues ne doivent pas y accéder.',
+        'Access-Accept / Access-Reject · attribution de rôle à vérifier',
+        'Ne pas faire confiance au seul nom d’utilisateur ou à la seule adresse MAC',
+        [
+          answer('zt-role-policy', 'Accorder VLAN 11 uniquement après authentification et conformité ; refuser ou isoler les inconnus', 'Associer Access-Accept à une politique de rôle explicite et Access-Reject à un refus ou segment de remédiation.', 'L’employé vérifié reçoit l’accès attendu ; l’équipement non reconnu reste hors production.', 'Biais évité : accorder un accès de production par défaut.', true),
+          answer('zt-vlan-any', 'Placer toute authentification réussie dans VLAN 11 sans contrôler le rôle', 'L’authentification est utile, mais la politique ne distingue pas les besoins d’accès.', 'Un compte valide peut recevoir une portée réseau supérieure à celle nécessaire.', 'Biais commis : confondre identité authentifiée et autorisation universelle.', false, { security: -12, availability: 5, logic: -8 }),
+          answer('zt-mac-accept', 'Envoyer Access-Accept pour toute adresse MAC connue', 'Une adresse MAC n’est ni secrète ni une preuve suffisante de l’utilisateur.', 'La décision RADIUS paraît simple mais l’accès reste contournable.', 'Biais commis : baser la confiance sur un attribut facilement copiable.', false, { security: -18, availability: 3, logic: -11 }),
         ],
-      },
-      {
-        id: 'nac-validate',
-        title: 'Organiser le retour à la normale',
-        context:
-          'Les services prioritaires sont opérationnels. Le nœud principal reste en cours de réparation et les équipes s’apprêtent à clôturer l’incident.',
-        alert: 'Continuité rétablie · contrôles de cohérence requis',
-        constraint: 'Ne pas perdre les changements effectués pendant la crise',
-        options: [
-          {
-            id: 'nac-audit',
-            label: 'Comparer les politiques, révoquer les exceptions échues et tester un retour contrôlé',
-            detail: 'Une clôture vérifiée évite que la solution de crise ne crée un risque durable.',
-            impact: { security: 12, availability: 6, logic: 13 },
-            consequence:
-              'Vous validez la cohérence des politiques et le comportement des services avant de fermer l’incident. Les écarts temporaires sont retirés de manière vérifiable.',
-            bias: 'Biais évité : considérer le service rétabli comme preuve que le risque est clos.',
-            next: null,
-            recommended: true,
-          },
-          {
-            id: 'nac-close',
-            label: 'Clôturer dès que les utilisateurs peuvent se reconnecter',
-            detail: 'Le service est visible, mais les exceptions et la réplication restent à contrôler.',
-            impact: { security: -8, availability: 5, logic: -8 },
-            consequence:
-              'La reprise apparente ne confirme pas que les politiques sont cohérentes ni que les dérogations d’urgence ont été supprimées.',
-            bias: 'Biais commis : clôture prématurée fondée sur un seul indicateur.',
-            next: null,
-            recommended: false,
-          },
-          {
-            id: 'nac-disable',
-            label: 'Désactiver durablement le contrôle NAC pour prévenir une nouvelle panne',
-            detail: 'Cette décision évite un blocage futur en abandonnant la fonction de contrôle.',
-            impact: { security: -25, availability: 8, logic: -16 },
-            consequence:
-              'Supprimer le contrôle n’élimine pas la cause de la panne et augmente durablement le risque d’accès non maîtrisé.',
-            bias: 'Biais commis : généraliser une mesure d’urgence au fonctionnement normal.',
-            next: null,
-            recommended: false,
-          },
+      ),
+      question(
+        'zt-validate',
+        'Valider le déploiement Zero Trust',
+        'La nouvelle politique est prête en préproduction. Il faut vérifier le parcours employé, le refus d’un équipement inconnu, la journalisation et le retour arrière avant généralisation.',
+        'Politique configurée · validation et supervision requises',
+        'Déployer par étapes et garder une procédure de retour arrière',
+        [
+          answer('zt-staged-test', 'Tester identités autorisées et refusées sur un port pilote, puis étendre avec suivi', 'Vérifier la décision RADIUS, le VLAN attribué et les journaux sans exposer la production.', 'Les erreurs de politique sont détectées avant un déploiement global.', 'Biais évité : supposer qu’une configuration correcte sur papier fonctionnera partout.', true),
+          answer('zt-all-at-once', 'Appliquer partout immédiatement sans fenêtre de test', 'Une erreur de certificat ou de politique peut bloquer de nombreux ports.', 'Le changement est difficile à diagnostiquer et à annuler sous pression.', 'Biais commis : sacrifier la réversibilité pour gagner du temps.', false, { security: 1, availability: -18, logic: -14 }),
+          answer('zt-no-logs', 'Désactiver les journaux pour réduire le volume pendant le déploiement', 'Sans événements d’authentification, les refus et erreurs deviennent difficiles à différencier.', 'Les incidents de déploiement et les accès anormaux perdent leur traçabilité.', 'Biais commis : optimiser le bruit au détriment de la capacité de contrôle.', false, { security: -11, availability: 0, logic: -14 }),
         ],
-      },
+      ),
     ],
-  },
-  {
-    id: 'insider-response',
-    title: 'Un poste agit hors profil',
-    domain: 'Réponse à incident',
-    difficulty: 'Avancé',
-    duration: '10 min',
-    objective: 'Contenir un poste suspect sans isoler tout le VLAN de production.',
-    description:
-      'Détection d’un comportement latéral suspect depuis un poste employé déjà authentifié en VLAN Production : appliquer une riposte dynamique (RADIUS CoA / quarantaine) sans couper le reste du réseau.',
-    accent: 'amber',
-    steps: [
-      {
-        id: 'insider-verify',
-        title: 'Qualifier le signal sans alerter toute la production',
-        context:
-          'Une alerte signale des connexions inhabituelles depuis un poste employé authentifié en VLAN Production. Les autres équipements semblent fonctionner normalement.',
-        alert: 'Comportement latéral suspect · identité connue, posture à confirmer',
-        constraint: 'Éviter les perturbations collatérales',
-        options: [
-          {
-            id: 'insider-correlate',
-            label: 'Corréler l’identité, la posture du poste et les événements récents',
-            detail: 'Confirmer le signal avec plusieurs sources avant une mesure ciblée.',
-            impact: { security: 8, availability: 5, logic: 13 },
-            consequence:
-              'La corrélation distingue une anomalie isolée d’un comportement confirmé et aide à attribuer la mesure au bon poste.',
-            bias: 'Biais évité : prendre une alerte unique pour une preuve suffisante.',
-            next: 'insider-contain',
-            recommended: true,
-          },
-          {
-            id: 'insider-vlan',
-            label: 'Isoler immédiatement tout le VLAN Production',
-            detail: 'La portée de l’alerte n’est pas encore connue, mais l’impact serait massif.',
-            impact: { security: 12, availability: -25, logic: -8 },
-            consequence:
-              'Une isolation générale peut contenir le poste suspect, mais coupe aussi les systèmes sains et complique la réponse opérationnelle.',
-            bias: 'Biais commis : confondre rapidité et précision du périmètre.',
-            next: 'insider-contain',
-            recommended: false,
-          },
-          {
-            id: 'insider-ignore',
-            label: 'Ignorer l’alerte : le poste est déjà authentifié',
-            detail: 'Une authentification antérieure ne garantit ni la posture actuelle ni l’absence de compromission.',
-            impact: { security: -20, availability: 3, logic: -14 },
-            consequence:
-              'L’authentification prouve un état à un instant donné, pas l’innocuité des actions ultérieures. Le signal reste sans qualification.',
-            bias: 'Biais commis : confondre identité valide et comportement sûr.',
-            next: 'insider-contain',
-            recommended: false,
-          },
-        ],
-      },
-      {
-        id: 'insider-contain',
-        title: 'Choisir une mesure de confinement ciblée',
-        context:
-          'Les éléments disponibles désignent un poste et une identité précis. Le reste du segment ne présente pas le même comportement.',
-        alert: 'Cible identifiée · session active',
-        constraint: 'Conserver les éléments utiles à l’investigation',
-        options: [
-          {
-            id: 'insider-coa',
-            label: 'Déclencher une réauthentification ciblée et placer le poste en quarantaine',
-            detail: 'La réponse dynamique cible la session concernée et laisse les autres flux intacts.',
-            impact: { security: 15, availability: 8, logic: 12 },
-            consequence:
-              'Une action de contrôle d’accès par session limite l’exposition tout en préservant la production non impliquée. Le résultat doit être confirmé côté réseau.',
-            bias: 'Biais évité : utiliser une mesure globale pour un incident attribué à un seul poste.',
-            next: 'insider-investigate',
-            recommended: true,
-          },
-          {
-            id: 'insider-acl',
-            label: 'Appliquer une restriction temporaire au seul port ou poste concerné',
-            detail: 'Une restriction locale est une option de repli si la réponse dynamique n’est pas disponible.',
-            impact: { security: 9, availability: 5, logic: 8 },
-            consequence:
-              'Le périmètre réduit protège le réseau sans dépendre d’une modification générale. Documentez la mesure et préparez sa levée contrôlée.',
-            bias: 'Point de vigilance : vérifier le rattachement entre l’identité, le poste et le port.',
-            next: 'insider-investigate',
-            recommended: false,
-          },
-          {
-            id: 'insider-reset',
-            label: 'Réinitialiser le mot de passe sans contenir le poste',
-            detail: 'La mesure sur l’identité ne met pas fin à une session déjà active.',
-            impact: { security: -7, availability: 0, logic: -9 },
-            consequence:
-              'Une action sur le compte peut être utile, mais elle ne remplace pas le confinement de l’équipement ni la vérification des sessions actives.',
-            bias: 'Biais commis : traiter un incident de poste uniquement comme un problème d’identifiants.',
-            next: 'insider-investigate',
-            recommended: false,
-          },
-        ],
-      },
-      {
-        id: 'insider-investigate',
-        title: 'Préserver les preuves et vérifier le périmètre',
-        context:
-          'Le poste est isolé ou restreint. L’équipe de réponse doit déterminer s’il existe d’autres systèmes touchés sans altérer les éléments disponibles.',
-        alert: 'Confinement en cours · investigation à coordonner',
-        constraint: 'Ne pas effacer les traces avant leur collecte',
-        options: [
-          {
-            id: 'insider-preserve',
-            label: 'Préserver les journaux, relever les indicateurs et rechercher des postes liés',
-            detail: 'L’investigation s’appuie sur des éléments conservés et un périmètre vérifiable.',
-            impact: { security: 11, availability: 6, logic: 13 },
-            consequence:
-              'La collecte ordonnée soutient l’analyse et permet de vérifier si le poste est un cas isolé avant toute extension du confinement.',
-            bias: 'Biais évité : supprimer ou modifier les preuves en voulant nettoyer trop vite.',
-            next: 'insider-recover',
-            recommended: true,
-          },
-          {
-            id: 'insider-wipe',
-            label: 'Réinitialiser immédiatement le poste et effacer ses données',
-            detail: 'Le poste peut repartir proprement, mais les éléments d’analyse risquent de disparaître.',
-            impact: { security: -3, availability: -7, logic: -14 },
-            consequence:
-              'L’effacement avant collecte détruit potentiellement des éléments nécessaires pour comprendre la portée et prévenir la récidive.',
-            bias: 'Biais commis : privilégier le nettoyage au détriment de l’investigation.',
-            next: 'insider-recover',
-            recommended: false,
-          },
-          {
-            id: 'insider-broadcast',
-            label: 'Diffuser l’identité de l’employé à toute l’entreprise avant vérification',
-            detail: 'La communication prématurée expose des informations et peut gêner l’enquête.',
-            impact: { security: -5, availability: 0, logic: -12 },
-            consequence:
-              'Une communication non coordonnée ne renforce pas le confinement et peut nuire à la confidentialité de l’enquête.',
-            bias: 'Biais commis : substituer une réaction visible à une réponse opérationnelle.',
-            next: 'insider-recover',
-            recommended: false,
-          },
-        ],
-      },
-      {
-        id: 'insider-recover',
-        title: 'Réintégrer uniquement après validation',
-        context:
-          'Les éléments ont été préservés et la portée de l’incident est mieux comprise. Le métier demande la remise en service du poste.',
-        alert: 'Demande de réintégration · posture de sécurité à revalider',
-        constraint: 'La remise en service doit être traçable et réversible',
-        options: [
-          {
-            id: 'insider-restore',
-            label: 'Valider la remédiation, réauthentifier et réintégrer sous surveillance',
-            detail: 'La réintégration dépend de contrôles observables et d’un suivi renforcé.',
-            impact: { security: 12, availability: 9, logic: 13 },
-            consequence:
-              'Une remise en service conditionnelle rétablit l’activité sans transformer la quarantaine en simple pause non vérifiée.',
-            bias: 'Biais évité : supposer que le temps passé en quarantaine suffit à résoudre l’incident.',
-            next: null,
-            recommended: true,
-          },
-          {
-            id: 'insider-release',
-            label: 'Lever la quarantaine dès que le collaborateur le demande',
-            detail: 'La demande métier ne constitue pas un contrôle de remédiation.',
-            impact: { security: -17, availability: 6, logic: -12 },
-            consequence:
-              'Sans validation de la posture, le comportement suspect peut reprendre dès la levée du confinement.',
-            bias: 'Biais commis : confondre pression de service et preuve de sécurité.',
-            next: null,
-            recommended: false,
-          },
-          {
-            id: 'insider-ban',
-            label: 'Maintenir une quarantaine permanente sans réévaluation',
-            detail: 'Le risque peut être contenu, mais la mesure n’est ni proportionnée ni révisable.',
-            impact: { security: 4, availability: -14, logic: -7 },
-            consequence:
-              'Une quarantaine durable sans critères de sortie pénalise le métier et ne remplace pas une remédiation vérifiée.',
-            bias: 'Biais commis : transformer une mesure temporaire en sanction sans critères.',
-            next: null,
-            recommended: false,
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'ddos-tradeoff',
-    title: 'DDoS : arbitrage sous pression',
-    domain: 'Logique & architecture',
+  }),
+  scenario({
+    id: 'nac-survival',
+    title: 'SPOF : mode survie NAC',
+    domain: 'PCA · FreeRADIUS · VLAN 99',
     difficulty: 'Expert',
     duration: '14 min',
-    objective: 'Arbitrer disponibilité, intégrité et isolement avec des signaux contradictoires.',
-    description:
-      'Arbitrage d’architecture critique sous attaque DDoS : prioriser la disponibilité, l’intégrité ou l’isolement face à des alertes contradictoires.',
+    objective: 'Maintenir les sessions établies et traiter les nouvelles authentifications en mode dégradé sans fail-open global.',
+    description: 'À 08 h 30, PacketFence sur DC1 devient injoignable. Arbitrer entre continuité des sessions, authentification locale de secours et Critical VLAN.',
     accent: 'emerald',
     steps: [
-      {
-        id: 'ddos-signals',
-        title: 'Distinguer saturation et compromission',
-        context:
-          'Le portail client est ralenti par un volume de trafic inhabituel. Une alerte d’intégrité vient de se déclencher, tandis que les journaux sont partiellement retardés.',
-        alert: 'Latence élevée · signal d’intégrité non encore corroboré',
-        constraint: 'Éviter une modification irréversible sur une alerte isolée',
-        options: [
-          {
-            id: 'ddos-correlate',
-            label: 'Comparer les métriques de trafic, les contrôles d’intégrité et les journaux indépendants',
-            detail: 'Une vérification croisée sépare les faits confirmés des signaux contradictoires.',
-            impact: { security: 8, availability: 5, logic: 14 },
-            consequence:
-              'Vous évitez de traiter une alerte incertaine comme une compromission avérée tout en gardant la possibilité de contenir rapidement un impact confirmé.',
-            bias: 'Biais évité : ancrage sur le signal le plus alarmant.',
-            next: 'ddos-scope',
-            recommended: true,
-          },
-          {
-            id: 'ddos-shutdown',
-            label: 'Couper tous les services publics immédiatement',
-            detail: 'L’isolement est maximal mais la disponibilité est abandonnée sans mesure de périmètre.',
-            impact: { security: 10, availability: -23, logic: -8 },
-            consequence:
-              'L’arrêt global limite l’exposition, mais rien ne démontre que toutes les fonctions sont touchées ou que cette mesure soit nécessaire.',
-            bias: 'Biais commis : appliquer la mesure la plus forte en l’absence de comparaison.',
-            next: 'ddos-scope',
-            recommended: false,
-          },
-          {
-            id: 'ddos-ignore',
-            label: 'Ignorer l’alerte d’intégrité et augmenter seulement la capacité',
-            detail: 'Augmenter les ressources peut soulager la charge sans expliquer le signal d’intégrité.',
-            impact: { security: -15, availability: 11, logic: -12 },
-            consequence:
-              'Le renforcement de capacité ne répond pas à une éventuelle altération et peut retarder une investigation indispensable.',
-            bias: 'Biais commis : réduire un incident multi-signal à un seul indicateur de performance.',
-            next: 'ddos-scope',
-            recommended: false,
-          },
+      question(
+        'survival-existing',
+        'Protéger les sessions déjà établies',
+        'Le serveur NAC central `192.168.100.11` ne répond plus. Des employés déjà authentifiés sont connectés à `SW-NAC-01` sur le VLAN 11, tandis que les nouvelles demandes d’accès commencent à expirer.',
+        'DC1 indisponible · sessions actives encore fonctionnelles',
+        'Éviter une coupure globale sans élargir les autorisations',
+        [
+          answer('survival-keep-sessions', 'Maintenir les sessions et le VLAN 11 existants, puis vérifier leur état et leur périmètre', 'Le plan de données continue ; la panne du contrôleur ne justifie pas de déconnecter les sessions saines.', 'Les activités en cours sont préservées pendant le diagnostic du plan de contrôle.', 'Biais évité : traiter les connexions établies comme des demandes nouvelles.', true),
+          answer('survival-drop-all', 'Couper toutes les sessions pour forcer une réauthentification', 'Le service RADIUS indisponible empêcherait ensuite plusieurs reconnexions.', 'La mesure augmente les pertes de service et ne rétablit pas le contrôle central.', 'Biais commis : appliquer un redémarrage global sans plan de reprise.', false, { security: 7, availability: -24, logic: -10 }),
+          answer('survival-open-all', 'Basculer tous les ports en accès ouvert', 'Cette action évite certains refus mais supprime le contrôle d’admission.', 'Le mode dégradé devient une ouverture durable potentielle.', 'Biais commis : masquer l’indisponibilité en supprimant la protection.', false, { security: -24, availability: 15, logic: -15 }),
         ],
-      },
-      {
-        id: 'ddos-scope',
-        title: 'Réduire l’impact sans masquer les preuves',
-        context:
-          'Les premières vérifications confirment un pic de trafic sur le portail, mais ne confirment pas encore d’altération des données. Les services internes restent disponibles.',
-        alert: 'Impact public concentré · services internes stables',
-        constraint: 'Protéger les fonctions essentielles et conserver les traces',
-        options: [
-          {
-            id: 'ddos-edge',
-            label: 'Appliquer une atténuation graduée en périphérie et suivre ses effets',
-            detail: 'Une mesure réversible et ciblée protège l’origine sans couper les services non touchés.',
-            impact: { security: 8, availability: 14, logic: 12 },
-            consequence:
-              'L’atténuation ciblée réduit la charge à la périphérie et permet de mesurer les faux positifs avant d’élargir la réponse.',
-            bias: 'Biais évité : traiter tous les flux et tous les services de la même façon.',
-            next: 'ddos-integrity',
-            recommended: true,
-          },
-          {
-            id: 'ddos-origin',
-            label: 'Exposer directement l’origine pour contourner l’intermédiaire saturé',
-            detail: 'Cela contourne un point de protection et rend l’origine plus accessible.',
-            impact: { security: -18, availability: 6, logic: -10 },
-            consequence:
-              'Contourner la protection peut rendre l’origine vulnérable et ne garantit pas de résoudre la saturation.',
-            bias: 'Biais commis : confondre contournement du symptôme et réduction de l’exposition.',
-            next: 'ddos-integrity',
-            recommended: false,
-          },
-          {
-            id: 'ddos-throttle',
-            label: 'Limiter uniformément toutes les requêtes à un seuil très bas',
-            detail: 'Une limitation aveugle protège les ressources au risque de rejeter les clients légitimes.',
-            impact: { security: 3, availability: -9, logic: -5 },
-            consequence:
-              'Une limite uniforme peut pénaliser les usages légitimes et n’exploite pas l’information sur les flux réellement anormaux.',
-            bias: 'Biais commis : utiliser une règle simple sans observer ses effets différenciés.',
-            next: 'ddos-integrity',
-            recommended: false,
-          },
+      ),
+      question(
+        'survival-auth',
+        'Traiter les nouvelles authentifications',
+        'Les nouvelles demandes subissent des timeouts RADIUS. `hostapd` peut utiliser une instance FreeRADIUS locale préconfigurée sur `127.0.0.1`, avec un jeu de politiques limité et auditable.',
+        'Timeout RADIUS distant · service local de secours disponible',
+        'Éviter à la fois fail-open total et fail-close général',
+        [
+          answer('survival-local-radius', 'Valider la santé et les politiques de FreeRADIUS local, puis activer le basculement prévu', 'La décision s’appuie sur un secours testé et sur des règles limitées aux identités et services nécessaires.', 'Les nouvelles authentifications peuvent continuer avec des contrôles cohérents en mode dégradé.', 'Biais évité : improviser une exception globale pendant une panne.', true),
+          answer('survival-fail-open', 'Accepter toute demande après expiration du délai RADIUS', 'Le timeout n’est pas une preuve d’identité ou de conformité.', 'Des équipements inconnus peuvent être admis sans contrôle.', 'Biais commis : assimiler indisponibilité du contrôle à une autorisation.', false, { security: -25, availability: 16, logic: -16 }),
+          answer('survival-fail-close', 'Refuser toute nouvelle connexion et toute reprise de session', 'Le refus protège le périmètre mais ignore le mécanisme de continuité préparé.', 'Les nouveaux arrivants légitimes sont bloqués malgré un secours disponible.', 'Biais commis : appliquer le refus maximal sans distinguer le risque et le service.', false, { security: 14, availability: -22, logic: -10 }),
         ],
-      },
-      {
-        id: 'ddos-integrity',
-        title: 'Traiter l’alerte d’intégrité',
-        context:
-          'La charge a diminué. Une comparaison secondaire signale un écart sur un composant, sans confirmer si cet écart est lié à l’attaque ou à un déploiement récent.',
-        alert: 'Écart d’intégrité à qualifier · origine inconnue',
-        constraint: 'Maintenir les fonctions saines isolées du composant douteux',
-        options: [
-          {
-            id: 'ddos-isolate',
-            label: 'Isoler le composant concerné, préserver une copie des preuves et comparer à la référence',
-            detail: 'L’isolement local limite l’exposition sans sacrifier le service entier.',
-            impact: { security: 14, availability: 5, logic: 14 },
-            consequence:
-              'Vous traitez le signal comme important sans conclure trop tôt à une compromission. La comparaison à une référence connue permet de distinguer déploiement et altération.',
-            bias: 'Biais évité : choisir entre « tout va bien » et « tout est compromis » sans option intermédiaire.',
-            next: 'ddos-priorities',
-            recommended: true,
-          },
-          {
-            id: 'ddos-rollback',
-            label: 'Restaurer tout l’environnement depuis la dernière sauvegarde',
-            detail: 'Un retour global peut réintroduire des composants sains dans une panne.',
-            impact: { security: 6, availability: -17, logic: -8 },
-            consequence:
-              'La restauration générale n’est pas proportionnée à un écart limité et non attribué ; elle complique aussi l’analyse de la cause.',
-            bias: 'Biais commis : confondre action de remédiation et retour aveugle à un état antérieur.',
-            next: 'ddos-priorities',
-            recommended: false,
-          },
-          {
-            id: 'ddos-dismiss',
-            label: 'Classer l’écart comme faux positif sans vérification complémentaire',
-            detail: 'L’hypothèse du déploiement est plausible, mais reste à confirmer.',
-            impact: { security: -16, availability: 5, logic: -15 },
-            consequence:
-              'Une explication probable n’est pas une preuve. L’écart pourrait masquer un changement non autorisé.',
-            bias: 'Biais commis : privilégier l’explication rassurante sans la tester.',
-            next: 'ddos-priorities',
-            recommended: false,
-          },
+      ),
+      question(
+        'survival-critical-vlan',
+        'Limiter l’accès de survie',
+        'Les politiques de secours sont confirmées. Les équipements sans authentification centrale complète doivent être limités aux services indispensables pendant l’incident.',
+        'Mode local actif · Critical VLAN 99 disponible',
+        'Définir précisément les flux autorisés et journaliser les admissions',
+        [
+          answer('survival-vlan99', 'Placer les cas prévus en VLAN 99 avec règles minimales et traçabilité', 'Le hook de politique Open vSwitch déjà validé applique le segment de survie aux seuls ports concernés.', 'Les besoins essentiels sont maintenus sans accorder un accès général au VLAN 11.', 'Biais évité : transformer le réseau de secours en réseau de production bis.', true),
+          answer('survival-vlan11', 'Placer tous les nouveaux appareils en VLAN 11', 'Le VLAN de production est plus accessible, mais le contrôle de secours ne l’autorise pas.', 'La panne centrale élargit la confiance à des équipements non vérifiés.', 'Biais commis : utiliser le segment métier comme réponse universelle.', false, { security: -17, availability: 11, logic: -12 }),
+          answer('survival-isolate', 'Bloquer tous les nouveaux appareils même lorsque le besoin est critique', 'Le risque est réduit, mais aucun processus gradué n’est appliqué.', 'Les activités prioritaires restent indisponibles alors qu’un segment contrôlé existe.', 'Biais commis : confondre isolement et continuité maîtrisée.', false, { security: 10, availability: -18, logic: -8 }),
         ],
-      },
-      {
-        id: 'ddos-priorities',
-        title: 'Définir l’arbitrage et clôturer',
-        context:
-          'La charge est maîtrisée et le composant douteux est contenu. Les équipes doivent maintenir les services essentiels puis préparer une sortie coordonnée de crise.',
-        alert: 'Incident stabilisé · suivi renforcé nécessaire',
-        constraint: 'Décision finale : expliciter le compromis et ses critères de sortie',
-        options: [
-          {
-            id: 'ddos-balanced',
-            label: 'Maintenir les fonctions saines, suivre les seuils et lever les mesures par étapes',
-            detail: 'L’arbitrage reste mesurable et peut être révisé en fonction des faits.',
-            impact: { security: 10, availability: 11, logic: 14 },
-            consequence:
-              'Vous rendez l’arbitrage explicite : disponibilité essentielle, intégrité vérifiée et isolement limité au périmètre suspect. Des critères observables guident le retour à la normale.',
-            bias: 'Biais évité : défendre une priorité unique quand les contraintes peuvent être conciliées.',
-            next: null,
-            recommended: true,
-          },
-          {
-            id: 'ddos-availability',
-            label: 'Tout réactiver immédiatement au nom de la disponibilité',
-            detail: 'La pression métier prend le pas sur les vérifications restantes.',
-            impact: { security: -15, availability: 13, logic: -10 },
-            consequence:
-              'La disponibilité remonte, mais sans vérifier l’intégrité ni établir des critères de sortie, l’incident peut reprendre.',
-            bias: 'Biais commis : optimiser un seul objectif et ignorer les risques résiduels.',
-            next: null,
-            recommended: false,
-          },
-          {
-            id: 'ddos-isolation',
-            label: 'Maintenir tous les services isolés jusqu’à certitude absolue',
-            detail: 'La certitude complète peut être impossible et les services sains restent indisponibles.',
-            impact: { security: 9, availability: -19, logic: -6 },
-            consequence:
-              'L’isolement prolongé réduit certains risques mais n’établit aucun seuil de décision pour une reprise proportionnée.',
-            bias: 'Biais commis : exiger une certitude impossible plutôt que définir une tolérance au risque.',
-            next: null,
-            recommended: false,
-          },
+      ),
+      question(
+        'survival-failback',
+        'Préparer le retour au contrôleur central',
+        'DC1 revient en ligne. Il faut vérifier la réplication des politiques et des journaux, puis sortir progressivement les ports du mode de survie.',
+        'DC1 rétabli · état de cohérence à confirmer',
+        'Éviter un basculement retour non testé ou simultané pour tous les ports',
+        [
+          answer('survival-staged-failback', 'Comparer les politiques, tester quelques ports, puis réauthentifier par vagues', 'Le retour au chemin central est progressif et chaque étape est mesurée.', 'Le VLAN 99 est retiré après validation du contrôle central et des services métier.', 'Biais évité : considérer le retour du serveur comme preuve de cohérence complète.', true),
+          answer('survival-immediate', 'Forcer le retour de tous les ports en même temps', 'Une incohérence de réplication peut provoquer une vague de refus ou de bascules.', 'Le risque de panne secondaire augmente et complique l’attribution des erreurs.', 'Biais commis : confondre disponibilité du serveur et préparation du failback.', false, { security: 1, availability: -16, logic: -13 }),
+          answer('survival-permanent', 'Laisser le mode local et le VLAN 99 actifs sans échéance', 'Le mode de survie n’est ni revu ni limité dans le temps.', 'Les exceptions deviennent permanentes et la politique centrale perd sa maîtrise.', 'Biais commis : oublier la sortie de crise après la reprise.', false, { security: -12, availability: 4, logic: -14 }),
         ],
-      },
+      ),
     ],
-  },
-  {
-    id: 'backup-integrity',
-    title: 'Une sauvegarde à valider',
-    domain: 'Continuité & résilience',
-    difficulty: 'Intermédiaire',
-    duration: '9 min',
-    objective: 'Vérifier la restaurabilité des sauvegardes sans compromettre les données de production.',
-    description:
-      'Une alerte signale un écart sur la dernière sauvegarde avant une maintenance planifiée. Évaluez les preuves, choisissez une reprise contrôlée et documentez le retour au service.',
-    accent: 'cyan',
+  }),
+  scenario({
+    id: 'insider-coa',
+    title: 'Menace interne : riposte ciblée',
+    domain: 'RADIUS CoA · RFC 5176 · VLAN 666',
+    difficulty: 'Expert',
+    duration: '14 min',
+    objective: 'Révoquer une session compromise de façon ciblée, préserver les preuves et vérifier la quarantaine.',
+    description: 'Un poste employé déjà authentifié manifeste un comportement latéral suspect. Utiliser une réponse d’accès dynamique sans couper les autres employés.',
+    accent: 'amber',
     steps: [
-      {
-        id: 'backup-alert',
-        title: 'Qualifier l’alerte de sauvegarde',
-        context:
-          'Le contrôle automatique détecte une différence entre le manifeste attendu et la dernière sauvegarde. Les services de production fonctionnent normalement.',
-        alert: 'Écart de vérification · intégrité non confirmée',
-        constraint: 'Ne pas modifier la copie de référence pendant l’analyse',
-        options: [
-          {
-            id: 'backup-compare',
-            label: 'Comparer les journaux, le manifeste et une copie de contrôle indépendante',
-            detail: 'La comparaison croisée détermine si l’écart est réel avant toute restauration.',
-            impact: { security: 8, availability: 5, logic: 13 },
-            consequence: 'Vous préservez la source et vérifiez l’alerte avec des éléments indépendants avant de choisir une reprise.',
-            bias: 'Biais évité : transformer un signal automatisé en diagnostic définitif.',
-            next: 'backup-isolate',
-            recommended: true,
-          },
-          {
-            id: 'backup-overwrite',
-            label: 'Relancer immédiatement la sauvegarde en écrasant la copie existante',
-            detail: 'Une nouvelle exécution peut effacer la seule copie utile à l’investigation.',
-            impact: { security: -7, availability: 2, logic: -12 },
-            consequence: 'L’écrasement détruit un point de comparaison et peut remplacer une copie saine par une copie incomplète.',
-            bias: 'Biais commis : agir avant de préserver les éléments de diagnostic.',
-            next: 'backup-isolate',
-            recommended: false,
-          },
-          {
-            id: 'backup-ignore',
-            label: 'Ignorer l’alerte puisque la production fonctionne encore',
-            detail: 'Le bon fonctionnement actuel ne confirme pas la capacité de restauration.',
-            impact: { security: -8, availability: -5, logic: -12 },
-            consequence: 'L’incident peut rester invisible jusqu’au moment où une restauration devient nécessaire.',
-            bias: 'Biais commis : confondre disponibilité actuelle et capacité de reprise.',
-            next: 'backup-isolate',
-            recommended: false,
-          },
+      question(
+        'coa-qualify',
+        'Qualifier le signal et son périmètre',
+        'Le poste `00:0c:29:02:d3:16`, authentifié en VLAN 11, déclenche des alertes de connexions latérales inhabituelles. Les autres équipements ne montrent pas le même signal.',
+        'Session active · identité initialement légitime · activité à confirmer',
+        'Corréler les alertes et contenir seulement le périmètre confirmé',
+        [
+          answer('coa-correlate', 'Corréler identité, port `ens34`, événements NAC et télémétrie avant action ciblée', 'Les signaux indépendants confirment l’équipement et la session concernés.', 'La réponse peut viser un poste sans isoler les employés non impliqués.', 'Biais évité : transformer une alerte en preuve sans corroboration.', true),
+          answer('coa-isolate-vlan', 'Couper immédiatement tout le VLAN 11', 'L’alerte concerne un poste mais la mesure affecte toute la production.', 'La disponibilité est fortement réduite sans améliorer la précision de l’enquête.', 'Biais commis : confondre périmètre du signal et périmètre de la mesure.', false, { security: 12, availability: -25, logic: -9 }),
+          answer('coa-ignore', 'Ne rien faire puisque 802.1X a déjà authentifié l’utilisateur', 'L’authentification initiale correspond à l’état au temps t0 et ne garantit pas la session actuelle.', 'Un poste compromis conserve son accès interne pendant l’analyse.', 'Biais commis : confondre identité valide et comportement toujours sûr.', false, { security: -22, availability: 2, logic: -14 }),
         ],
-      },
-      {
-        id: 'backup-isolate',
-        title: 'Protéger la copie de référence',
-        context:
-          'L’écart n’est pas encore expliqué. Une copie antérieure est disponible et le dépôt de sauvegarde accepte les opérations de maintenance.',
-        alert: 'Copie antérieure disponible · cause de l’écart inconnue',
-        constraint: 'Éviter toute propagation de l’anomalie aux copies valides',
-        options: [
-          {
-            id: 'backup-preserve',
-            label: 'Protéger la copie connue, suspendre sa rotation et créer une copie de travail',
-            detail: 'L’analyse se fait sur une copie sans altérer la référence.',
-            impact: { security: 10, availability: 6, logic: 12 },
-            consequence: 'La copie de référence reste disponible pour la reprise tandis que l’analyse peut se poursuivre sans risque de l’altérer.',
-            bias: 'Biais évité : traiter toutes les copies comme interchangeables.',
-            next: 'backup-restore-test',
-            recommended: true,
-          },
-          {
-            id: 'backup-rotate',
-            label: 'Laisser la rotation automatique supprimer les anciennes copies',
-            detail: 'Une politique normale peut éliminer les dernières versions vérifiées.',
-            impact: { security: -9, availability: -12, logic: -8 },
-            consequence: 'La rotation peut supprimer une copie encore restaurable avant que l’écart soit compris.',
-            bias: 'Biais commis : supposer qu’un automatisme reste adapté pendant un incident.',
-            next: 'backup-restore-test',
-            recommended: false,
-          },
-          {
-            id: 'backup-disable',
-            label: 'Désactiver durablement les sauvegardes pour éviter toute nouvelle anomalie',
-            detail: 'L’arrêt supprime aussi la protection contre les incidents suivants.',
-            impact: { security: -8, availability: -15, logic: -10 },
-            consequence: 'La suspension générale réduit la capacité de reprise et ne traite pas la cause de l’écart.',
-            bias: 'Biais commis : supprimer une fonction critique au lieu de borner le problème.',
-            next: 'backup-restore-test',
-            recommended: false,
-          },
+      ),
+      question(
+        'coa-disconnect',
+        'Choisir la révocation de session',
+        'Le poste est identifié et la session est active. La plateforme NAC prend en charge les messages RADIUS CoA/Disconnect de la RFC 5176 sur UDP 3799.',
+        'Session suspecte confirmée · autres sessions normales',
+        'S’assurer que la demande vise la session exacte et que son résultat sera vérifié',
+        [
+          answer('coa-targeted-disconnect', 'Envoyer une demande Disconnect ciblée via le mécanisme NAC et vérifier l’accusé de réception', 'Le contrôleur utilise le flux CoA/Disconnect prévu et confirme la session visée.', 'La révocation à chaud cible le poste sans débrancher les autres utilisateurs.', 'Biais évité : remplacer une révocation précise par une coupure physique ou globale.', true),
+          answer('coa-revoke-account-only', 'Réinitialiser le mot de passe sans révoquer la session active', 'Une modification de compte ne met pas forcément fin à une session déjà autorisée.', 'Le poste peut conserver temporairement son accès réseau.', 'Biais commis : traiter l’identité sans contenir l’équipement.', false, { security: -8, availability: 2, logic: -10 }),
+          answer('coa-reboot-switch', 'Redémarrer le switch pour interrompre toutes les sessions', 'L’action dépasse largement le périmètre confirmé.', 'Les utilisateurs sains subissent une interruption évitable et les preuves peuvent être perdues.', 'Biais commis : privilégier une action visible à une réponse ciblée.', false, { security: 5, availability: -25, logic: -15 }),
         ],
-      },
-      {
-        id: 'backup-restore-test',
-        title: 'Tester la restauration sans exposer la production',
-        context:
-          'Une copie indépendante est protégée. L’équipe doit confirmer qu’elle est exploitable avant la fenêtre de maintenance.',
-        alert: 'Restauration à tester · environnement isolé disponible',
-        constraint: 'Conserver les contrôles d’accès et la traçabilité du test',
-        options: [
-          {
-            id: 'backup-sandbox',
-            label: 'Restaurer un échantillon dans un environnement isolé et vérifier son intégrité',
-            detail: 'Le test confirme la récupérabilité sans toucher aux services actifs.',
-            impact: { security: 9, availability: 8, logic: 13 },
-            consequence: 'Le test en environnement isolé vérifie l’intégrité et le temps de reprise sans perturber la production.',
-            bias: 'Biais évité : prendre la réussite d’une tâche de sauvegarde pour preuve de restaurabilité.',
-            next: 'backup-close',
-            recommended: true,
-          },
-          {
-            id: 'backup-live',
-            label: 'Restaurer directement sur les données de production pour gagner du temps',
-            detail: 'Le test peut remplacer des données fonctionnelles avant validation.',
-            impact: { security: -11, availability: -18, logic: -12 },
-            consequence: 'La restauration directe transforme un test en changement risqué et peut interrompre les services ou écraser des données récentes.',
-            bias: 'Biais commis : confondre environnement de test et cible de production.',
-            next: 'backup-close',
-            recommended: false,
-          },
-          {
-            id: 'backup-trust',
-            label: 'Considérer la sauvegarde valide dès que la tâche se termine sans erreur',
-            detail: 'Le statut de la tâche ne teste pas le contenu ni la durée de reprise.',
-            impact: { security: -6, availability: -6, logic: -13 },
-            consequence: 'Un statut de réussite ne garantit ni la cohérence applicative ni le respect des objectifs de reprise.',
-            bias: 'Biais commis : confondre succès du processus et succès de la restauration.',
-            next: 'backup-close',
-            recommended: false,
-          },
+      ),
+      question(
+        'coa-quarantine',
+        'Vérifier l’isolement effectif',
+        'La réponse dynamique est acceptée. La politique Open vSwitch doit placer `ens34` en VLAN 666, avec refus des accès internes et conservation des journaux.',
+        'Disconnect-ACK reçu · quarantaine attendue sur VLAN 666',
+        'Vérifier l’état réel du port et les flux bloqués, pas seulement l’accusé',
+        [
+          answer('coa-verify-vlan', 'Confirmer l’affectation au VLAN 666 et la perte d’accès interne pour ce seul port', 'Les journaux de décision et la télémétrie réseau confirment le résultat attendu.', 'La quarantaine est validée sans supposer que l’accusé garantit à lui seul l’application de la politique.', 'Biais évité : confondre commande acceptée et effet vérifié.', true),
+          answer('coa-trust-ack', 'Clore l’alerte dès réception du Disconnect-ACK', 'L’accusé confirme le traitement de la demande, pas nécessairement l’état final de chaque flux.', 'Une erreur de rattachement ou de politique peut laisser l’accès actif.', 'Biais commis : prendre un événement de contrôle pour une preuve de résultat.', false, { security: -12, availability: 2, logic: -13 }),
+          answer('coa-quarantine-all', 'Placer tout le VLAN 11 en quarantaine', 'La réponse dépasse la session confirmée.', 'La production entière perd sa connectivité interne sans nécessité démontrée.', 'Biais commis : étendre automatiquement une mesure ciblée.', false, { security: 6, availability: -23, logic: -10 }),
         ],
-      },
-      {
-        id: 'backup-close',
-        title: 'Documenter la décision et rétablir les contrôles',
-        context:
-          'Le test de restauration est terminé. La maintenance approche et les responsables doivent connaître les limites et les actions restantes.',
-        alert: 'Résultat du test disponible · suivi opérationnel requis',
-        constraint: 'Chaque exception doit avoir un responsable et une échéance',
-        options: [
-          {
-            id: 'backup-report',
-            label: 'Consigner le résultat, le point de reprise vérifié et les actions de suivi datées',
-            detail: 'La décision reste vérifiable et les contrôles temporaires peuvent être levés.',
-            impact: { security: 8, availability: 9, logic: 13 },
-            consequence: 'Les équipes disposent d’un point de reprise vérifié, de limites documentées et d’actions attribuées pour corriger l’écart.',
-            bias: 'Biais évité : clôturer sans transmettre les conditions de reprise.',
-            next: null,
-            recommended: true,
-          },
-          {
-            id: 'backup-close-fast',
-            label: 'Clôturer l’alerte sans partager le résultat du test',
-            detail: 'Les équipes suivantes risquent de supposer que toutes les données sont couvertes.',
-            impact: { security: -4, availability: -6, logic: -12 },
-            consequence: 'Sans compte rendu, le périmètre réellement restaurable reste inconnu des personnes qui géreront la prochaine reprise.',
-            bias: 'Biais commis : confondre test réalisé et information transmise.',
-            next: null,
-            recommended: false,
-          },
-          {
-            id: 'backup-exception',
-            label: 'Maintenir les accès de maintenance ouverts sans date de fermeture',
-            detail: 'Une mesure temporaire non suivie peut devenir une exposition durable.',
-            impact: { security: -12, availability: 2, logic: -8 },
-            consequence: 'Une exception sans responsable ni échéance échappe au contrôle une fois la maintenance terminée.',
-            bias: 'Biais commis : oublier la révocation des accès introduits pour le test.',
-            next: null,
-            recommended: false,
-          },
+      ),
+      question(
+        'coa-recover',
+        'Préserver les preuves et planifier la remise en service',
+        'Le poste est confiné. L’équipe doit conserver les journaux et confirmer la remédiation avant de réauthentifier l’équipement.',
+        'Accès interne bloqué · investigation et remédiation en cours',
+        'La sortie de quarantaine doit être autorisée et vérifiable',
+        [
+          answer('coa-evidence-recovery', 'Préserver les traces, remédier, valider la posture puis réauthentifier sous surveillance', 'Documenter les décisions et définir des critères de sortie de quarantaine.', 'L’accès revient seulement lorsque la cause est traitée et la conformité confirmée.', 'Biais évité : assimiler une période de quarantaine à une remédiation.', true),
+          answer('coa-release-now', 'Lever immédiatement la quarantaine à la demande du métier', 'La demande de disponibilité ne fournit pas de preuve de correction.', 'Le comportement suspect peut reprendre sur le réseau interne.', 'Biais commis : sacrifier les contrôles de sortie sous pression.', false, { security: -18, availability: 9, logic: -12 }),
+          answer('coa-wipe', 'Effacer immédiatement le poste sans préserver les journaux', 'Le nettoyage peut supprimer des éléments utiles pour comprendre l’incident.', 'La cause et le périmètre risquent de rester inconnus.', 'Biais commis : nettoyer avant de documenter et comprendre.', false, { security: -2, availability: -9, logic: -15 }),
         ],
-      },
+      ),
     ],
-  },
+  }),
+  scenario({
+    id: 'iso-governance',
+    title: 'Gouvernance ISO 22301 et failback',
+    domain: 'PCA/PRA · RTO · RPO',
+    difficulty: 'Avancé',
+    duration: '12 min',
+    objective: 'Vérifier les objectifs de reprise et organiser un retour à la normale contrôlé, mesurable et adapté au budget.',
+    description: 'DC1 est rétabli après un incident majeur. Piloter la reprise du service NAC, les journaux de secours et le choix d’architecture.',
+    accent: 'emerald',
+    steps: [
+      question(
+        'iso-objectives',
+        'Valider les objectifs de reprise',
+        'Le PCA annonce un RTO inférieur à une minute grâce au basculement local et un RPO de zéro grâce à la réplication. Ces objectifs doivent être démontrés par les mesures de l’exercice, pas simplement supposés.',
+        'Objectifs déclarés · données de chronologie à vérifier',
+        'Comparer les temps réellement observés aux objectifs métier approuvés',
+        [
+          answer('iso-measure', 'Mesurer le temps de détection, de bascule et la cohérence des données répliquées', 'Comparer les résultats observés aux objectifs RTO < 1 min et RPO = 0.', 'Les écarts sont documentés et le plan est corrigé à partir de preuves.', 'Biais évité : confondre objectif inscrit et capacité démontrée.', true),
+          answer('iso-assume', 'Déclarer le RTO et le RPO atteints car le service répond à nouveau', 'Le retour du service ne renseigne ni sur la durée exacte ni sur les données manquantes.', 'Le rapport de continuité annonce des garanties non vérifiées.', 'Biais commis : conclure à partir d’un seul indicateur.', false, { security: 1, availability: 4, logic: -16 }),
+          answer('iso-ignore', 'Ne pas mesurer pour éviter de révéler un écart', 'L’absence de mesure empêche toute amélioration et réduit l’auditabilité.', 'Les risques de reprise restent inconnus jusqu’au prochain incident.', 'Biais commis : confondre absence de preuve et absence de problème.', false, { security: -7, availability: -6, logic: -18 }),
+        ],
+      ),
+      question(
+        'iso-evidence',
+        'Contrôler les comptes de secours et journaux',
+        'Les comptes d’urgence sont répliqués et des journaux locaux sont conservés sur DC1 et DC2. Il faut vérifier leur intégrité, leur disponibilité et les droits associés.',
+        'Réplication et journaux locaux disponibles · revue d’accès requise',
+        'Ne jamais exposer les secrets de secours dans le rapport ou le chat',
+        [
+          answer('iso-audit-evidence', 'Vérifier la réplication, les droits minimaux et la continuité des journaux sur les deux nœuds', 'Consigner les références et résultats sans copier les secrets d’authentification.', 'Les preuves de reprise sont protégées et exploitables pour l’audit.', 'Biais évité : documenter des secrets au lieu de documenter les contrôles.', true),
+          answer('iso-share-secrets', 'Joindre les identifiants de secours en clair au rapport de crise', 'La traçabilité ne nécessite pas de divulguer des secrets.', 'Le rapport devient une nouvelle source d’exposition.', 'Biais commis : confondre preuve d’existence et partage de credential.', false, { security: -24, availability: 0, logic: -13 }),
+          answer('iso-disable-logs', 'Supprimer les journaux locaux après la reprise', 'Les journaux sont nécessaires pour comprendre la bascule et prouver le RPO.', 'La capacité d’audit et d’analyse post-incident est réduite.', 'Biais commis : réduire le stockage au détriment de la preuve.', false, { security: -12, availability: 0, logic: -15 }),
+        ],
+      ),
+      question(
+        'iso-failback',
+        'Organiser le retour du VLAN 99 au VLAN 11',
+        'Le service central est stable. Des équipements sont encore en Critical VLAN 99. Le failback doit réauthentifier les postes et valider les politiques avant leur retour en production VLAN 11.',
+        'DC1/DC2 opérationnels · postes en mode survie à réintégrer',
+        'Préserver la continuité et contrôler chaque vague de réauthentification',
+        [
+          answer('iso-staged-return', 'Réauthentifier par lots, vérifier les politiques et déplacer uniquement les postes conformes vers VLAN 11', 'Conserver un suivi des refus et une possibilité d’arrêt entre les vagues.', 'La reprise est progressive, contrôlée et compatible avec la continuité métier.', 'Biais évité : traiter la récupération comme un simple changement de VLAN.', true),
+          answer('iso-mass-return', 'Basculer tous les ports du VLAN 99 vers le VLAN 11 en une seule fois', 'La politique centrale et la conformité de chaque poste ne sont pas encore confirmées.', 'Un défaut de configuration ou un poste non conforme peut affecter la production.', 'Biais commis : choisir le retour le plus rapide sans validation.', false, { security: -13, availability: -10, logic: -12 }),
+          answer('iso-stay-99', 'Laisser tous les postes en VLAN 99 sans date de sortie', 'Le mode de survie est limité et n’est pas une architecture de fonctionnement normal.', 'Les services métiers restent dégradés et les exceptions s’accumulent.', 'Biais commis : laisser la solution temporaire remplacer le plan de reprise.', false, { security: -8, availability: -15, logic: -12 }),
+        ],
+      ),
+      question(
+        'iso-platform',
+        'Choisir la suite de l’architecture NAC',
+        'Le comité compare PacketFence open source, Cisco ISE, Aruba ClearPass et FortiNAC. La décision dépend du budget total, des compétences, de l’intégration, du support et des résultats des tests PCA/PRA.',
+        'Comparatif fournisseur requis · objectifs de continuité à conserver',
+        'Évaluer sur les besoins mesurés plutôt que sur une marque seule',
+        [
+          answer('iso-evaluate', 'Comparer coût total, intégration, compétences, support et RTO/RPO lors d’un pilote', 'Inclure les coûts d’exploitation, la résilience, la supervision et la réversibilité.', 'Le choix est traçable et aligné sur l’architecture comme sur le budget.', 'Biais évité : choisir uniquement selon le prix initial ou la notoriété.', true),
+          answer('iso-brand', 'Choisir immédiatement la solution la plus connue sans pilote', 'La notoriété ne démontre ni intégration ni atteinte des objectifs de continuité.', 'Les contraintes d’exploitation peuvent apparaître après l’achat.', 'Biais commis : remplacer une évaluation par un raccourci de marque.', false, { security: -4, availability: -5, logic: -16 }),
+          answer('iso-price-only', 'Retenir uniquement le coût de licence le plus bas', 'Le coût complet inclut intégration, formation, maintenance et indisponibilité potentielle.', 'Une économie initiale peut augmenter le coût opérationnel et le risque de reprise.', 'Biais commis : ignorer le coût total de possession.', false, { security: -5, availability: -8, logic: -14 }),
+        ],
+      ),
+    ],
+  }),
 ];

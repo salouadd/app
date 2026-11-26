@@ -28,6 +28,7 @@ create table if not exists public.quiz_results (
   session_id uuid not null references public.quiz_sessions(id),
   username text not null,
   score integer not null check (score between 0 and 100),
+  elapsed_ms integer not null default 0 check (elapsed_ms between 0 and 86400000),
   scores jsonb not null,
   scenario_count integer not null check (scenario_count between 1 and 20),
   decision_count integer not null check (decision_count between 1 and 500),
@@ -36,6 +37,13 @@ create table if not exists public.quiz_results (
 
 create index if not exists quiz_results_by_session_score
   on public.quiz_results (session_id, score desc, created_at asc);
+
+alter table public.quiz_results
+  add column if not exists elapsed_ms integer not null default 0
+  check (elapsed_ms between 0 and 86400000);
+
+create index if not exists quiz_results_by_session_score_time
+  on public.quiz_results (session_id, score desc, elapsed_ms asc, created_at asc);
 
 insert into public.quiz_sessions (id, status)
 values ('00000000-0000-4000-8000-000000000001', 'waiting')

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { defaultScenarios } from '../src/data/scenarios.js';
-import { createOptionOrders, getTimerSeconds } from '../src/lib/scenarioRun.js';
+import { compareLeaderboardEntries, createOptionOrders, createRun, getTimerSeconds } from '../src/lib/scenarioRun.js';
 import { validateRun } from '../lib/validateRun.js';
 
 test('the full shared run contains sixteen decision questions', () => {
@@ -50,7 +50,39 @@ test('server recomputes scores from the recorded answers', () => {
   const result = validateRun(defaultScenarios.map((scenario) => scenario.id), history, defaultScenarios);
   assert.equal(result.valid, true);
   assert.deepEqual(result.scores, { security: 100, availability: 100, logic: 100 });
+  assert.equal(result.accuracyScore, 100);
+  assert.equal(result.correctAnswers, 16);
   assert.equal(validateRun(['nac-failover'], history, defaultScenarios).valid, false);
+});
+
+test('the global score starts at zero and only correct answers raise it', () => {
+  const run = createRun(defaultScenarios);
+  assert.equal(run.accuracyScore, 0);
+  assert.deepEqual(run.scores, { security: 0, availability: 0, logic: 0 });
+
+  let answerIndex = 0;
+  const history = defaultScenarios.flatMap((scenario) => scenario.steps.map((step) => {
+    const recommended = step.options.find((option) => option.recommended);
+    const incorrect = step.options.find((option) => !option.recommended);
+    answerIndex += 1;
+    return {
+      scenarioId: scenario.id,
+      stepId: step.id,
+      optionId: answerIndex <= 8 ? recommended.id : incorrect.id,
+    };
+  }));
+  const result = validateRun(defaultScenarios.map((scenario) => scenario.id), history, defaultScenarios);
+  assert.equal(result.correctAnswers, 8);
+  assert.equal(result.accuracyScore, 50);
+});
+
+test('leaderboard uses total completion time to break score ties', () => {
+  const entries = [
+    { username: 'Lina', score: 75, elapsedMs: 120000, completedAt: '2026-01-01T10:00:00Z' },
+    { username: 'Noah', score: 100, elapsedMs: 240000, completedAt: '2026-01-01T10:00:00Z' },
+    { username: 'Maya', score: 75, elapsedMs: 90000, completedAt: '2026-01-01T10:00:00Z' },
+  ];
+  assert.deepEqual(entries.sort(compareLeaderboardEntries).map((entry) => entry.username), ['Noah', 'Maya', 'Lina']);
 });
 
 test('question timers match scenario difficulty', () => {

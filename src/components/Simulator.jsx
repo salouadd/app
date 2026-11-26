@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { getCurrentRunTime, getTimerSeconds } from '../lib/scenarioRun.js';
+import { calculateAccuracyScore, getCurrentRunTime, getTimerSeconds } from '../lib/scenarioRun.js';
 
 const scoreLabels = [
+  { key: 'accuracyScore', label: 'Score global', short: 'BONNES RÉPONSES', color: 'cyan' },
   { key: 'security', label: 'Sécurité / contrôle', short: 'SÉCURITÉ', color: 'cyan' },
   { key: 'availability', label: 'Disponibilité / continuité', short: 'DISPONIBILITÉ', color: 'emerald' },
   { key: 'logic', label: 'Rigueur logique', short: 'LOGIQUE', color: 'amber' },
 ];
 
-function ScoreMeter({ label, short, value, color, impact }) {
+function ScoreMeter({ label, short, value, color, impact, footerText }) {
   const delta = impact === undefined ? null : impact;
   return (
     <div className="score-card">
@@ -21,7 +22,7 @@ function ScoreMeter({ label, short, value, color, impact }) {
       </div>
       <div className="score-card-footer">
         <span>{short}</span>
-        {delta !== null && <span className={delta >= 0 ? 'delta-positive' : 'delta-negative'}>{delta >= 0 ? '+' : ''}{delta}</span>}
+        {footerText || (delta !== null && <span className={delta >= 0 ? 'delta-positive' : 'delta-negative'}>{delta >= 0 ? '+' : ''}{delta}</span>)}
       </div>
     </div>
   );
@@ -119,16 +120,20 @@ export default function Simulator({ scenario, run, onRunChange, onFinish, onExit
       consequence: option.consequence,
       bias: option.bias,
     };
+    const history = [...run.history, historyEntry];
     const scores = Object.fromEntries(
       Object.keys(run.scores).map((key) => [
         key,
         Math.max(0, Math.min(100, run.scores[key] + (option.impact[key] ?? 0))),
       ]),
     );
+    const correctAnswers = run.correctAnswers + Number(option.recommended);
     onRunChange({
       ...run,
       scores,
-      history: [...run.history, historyEntry],
+      accuracyScore: calculateAccuracyScore(history, run.totalQuestions),
+      correctAnswers,
+      history,
       pendingNext: option.next,
       pendingOptionId: option.id,
     });
@@ -172,8 +177,9 @@ export default function Simulator({ scenario, run, onRunChange, onFinish, onExit
             label={item.label}
             short={item.short}
             color={item.color}
-            value={run.scores[item.key]}
-            impact={stepDeltas?.[item.key]}
+            value={item.key === 'accuracyScore' ? run.accuracyScore : run.scores[item.key]}
+            impact={item.key === 'accuracyScore' ? undefined : stepDeltas?.[item.key]}
+            footerText={item.key === 'accuracyScore' ? `${run.correctAnswers}/${run.totalQuestions} CORRECTES` : undefined}
           />
         ))}
       </section>

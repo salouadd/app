@@ -154,7 +154,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .back-link { padding: 0; border: 0; background: transparent; color: #8793a4; font-size: 10px; cursor: pointer; }
 .back-link:hover { color: #e5e7eb; }
 .mono-muted { color: #5e6a7c; font: 8px ui-monospace, monospace; letter-spacing: .08em; }
-.score-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 17px 0; }
+.score-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 17px 0; }
 .score-card { border: 1px solid #1f2937; border-radius: 4px; background: #111827; padding: 12px 14px; }
 .score-card-heading { display: flex; align-items: center; gap: 8px; }
 .score-label { color: #aab4c3; font-size: 9px; }
@@ -238,7 +238,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .result-scenario-list { display: flex; flex-wrap: wrap; gap: 7px; margin: -9px 0 18px; }
 .result-scenario-list span { padding: 5px 8px; border: 1px solid #263449; border-radius: 3px; color: #8d9aab; font-size: 8px; }
 .bullet-separator { color: #06b6d4; margin: 0 6px; }
-.result-score-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.result-score-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .result-metric { padding: 15px; }
 .metric-topline { color: #aab4c3; font-size: 9px; display: flex; align-items: center; gap: 8px; }
 .metric-number { color: #f1f5f9; font: 32px ui-monospace, monospace; margin: 12px 0 10px; }
@@ -266,6 +266,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .podium-card { min-height: 92px; padding: 14px; display: grid; align-content: center; justify-items: center; gap: 8px; border: 1px solid #293548; border-radius: 4px; background: #111827; }
 .podium-card strong { color: #e5e7eb; font-size: 11px; }
 .podium-card > span:last-child { color: #06b6d4; font: 16px ui-monospace, monospace; }
+.podium-time { color: #718096; font: 8px ui-monospace, monospace; }
 .podium-medal { color: #9aa6b5; font: 8px ui-monospace, monospace; text-transform: uppercase; }
 .podium-place-1 { min-height: 112px; border-color: #9b7a39; background: #1b1913; }
 .podium-place-1 .podium-medal { color: #fbbf24; }

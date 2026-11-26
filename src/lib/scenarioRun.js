@@ -22,6 +22,19 @@ export function getCurrentRunTime(run) {
   return new Date(Date.now() + (run.serverTimeOffsetMs || 0)).toISOString();
 }
 
+export function calculateAccuracyScore(history, totalQuestions) {
+  if (!totalQuestions) return 0;
+  const correctAnswers = history.filter((entry) =>
+    entry.optionId && entry.optionId === entry.recommendedOptionId).length;
+  return Math.round((correctAnswers / totalQuestions) * 100);
+}
+
+export function compareLeaderboardEntries(first, second) {
+  return second.score - first.score ||
+    first.elapsedMs - second.elapsedMs ||
+    Date.parse(first.completedAt) - Date.parse(second.completedAt);
+}
+
 export function createOptionOrders(scenarios) {
   const positionCycles = new Map();
   return Object.fromEntries(scenarios.flatMap((scenario) => scenario.steps.map((step) => {
@@ -43,12 +56,16 @@ export function createOptionOrders(scenarios) {
 }
 
 export function createRun(scenarios, participant = null, startedAt = new Date().toISOString(), serverTimeOffsetMs = 0) {
+  const totalQuestions = scenarios.reduce((total, scenario) => total + scenario.steps.length, 0);
   return {
     scenarioIds: scenarios.map((scenario) => scenario.id),
     scenarioId: scenarios[0].id,
     scenarioIndex: 0,
     stepId: scenarios[0].steps[0].id,
-    scores: { security: 55, availability: 55, logic: 55 },
+    scores: { security: 0, availability: 0, logic: 0 },
+    accuracyScore: 0,
+    correctAnswers: 0,
+    totalQuestions,
     history: [],
     pendingNext: null,
     pendingOptionId: null,

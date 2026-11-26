@@ -1,8 +1,14 @@
 const metricDetails = [
+  { key: 'accuracyScore', label: 'Score global / bonnes réponses', color: 'cyan', description: 'Chaque bonne réponse augmente le score ; une erreur ne le diminue pas' },
   { key: 'security', label: 'Sécurité / contrôle', color: 'cyan', description: 'Maîtrise du risque et des accès' },
   { key: 'availability', label: 'Disponibilité / continuité', color: 'emerald', description: 'Maintien des services essentiels' },
   { key: 'logic', label: 'Rigueur logique', color: 'amber', description: 'Qualité du raisonnement et des preuves' },
 ];
+
+function formatElapsedTime(milliseconds) {
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`;
+}
 
 function getProfile(scores) {
   const { security, availability, logic } = scores;
@@ -50,10 +56,19 @@ export default function ResultSummary({ scenarios, run, leaderboard, onReplay, o
   const profile = getProfile(run.scores);
   const scenariosById = new Map(scenarios.map((scenario) => [scenario.id, scenario]));
   const username = run.participant?.username;
-  const participantRank = username
-    ? leaderboard.findIndex((entry) => entry.username.toLocaleLowerCase() === username.toLocaleLowerCase()) + 1
-    : 0;
-  const podium = leaderboard.slice(0, 3);
+  const rankedLeaderboard = [];
+  leaderboard.forEach((entry, index) => {
+    const previous = rankedLeaderboard[index - 1];
+    const sameResult = previous &&
+      previous.score === entry.score &&
+      previous.elapsedMs === entry.elapsedMs;
+    rankedLeaderboard.push({ ...entry, rank: sameResult ? previous.rank : index + 1 });
+  });
+  const participantEntry = username
+    ? rankedLeaderboard.find((entry) => entry.username.toLocaleLowerCase() === username.toLocaleLowerCase())
+    : null;
+  const participantRank = participantEntry?.rank || 0;
+  const podium = rankedLeaderboard.filter((entry) => entry.rank <= 3);
 
   return (
     <div className="results-view">
@@ -61,7 +76,7 @@ export default function ResultSummary({ scenarios, run, leaderboard, onReplay, o
       <section className="results-hero">
         <div className="eyebrow"><span className="eyebrow-mark">03</span> BILAN ANALYTIQUE</div>
         <h1>Votre décision, <span>débriefée.</span></h1>
-        <p>{scenarios.length} scénarios <span className="bullet-separator">·</span> {run.history.length} décisions analysées{username && <> <span className="bullet-separator">·</span> Participant : {username}</>}</p>
+        <p>Score du parcours : <strong>{run.accuracyScore}%</strong> ({run.correctAnswers}/{run.totalQuestions} bonnes réponses) <span className="bullet-separator">·</span> {scenarios.length} scénarios{username && <> <span className="bullet-separator">·</span> Participant : {username}</>}</p>
         <div className="result-scenario-list">{scenarios.map((scenario) => <span key={scenario.id}>{scenario.title}</span>)}</div>
       </section>
 
@@ -69,8 +84,8 @@ export default function ResultSummary({ scenarios, run, leaderboard, onReplay, o
         {metricDetails.map((metric) => (
           <article className="result-metric panel" key={metric.key}>
             <div className="metric-topline"><span className={`status-dot ${metric.color}`} /><span>{metric.label}</span></div>
-            <div className="metric-number">{run.scores[metric.key]}<small>%</small></div>
-            <div className="meter-track"><div className={`meter-fill ${metric.color}`} style={{ width: `${run.scores[metric.key]}%` }} /></div>
+            <div className="metric-number">{metric.key === 'accuracyScore' ? run.accuracyScore : run.scores[metric.key]}<small>%</small></div>
+            <div className="meter-track"><div className={`meter-fill ${metric.color}`} style={{ width: `${metric.key === 'accuracyScore' ? run.accuracyScore : run.scores[metric.key]}%` }} /></div>
             <span className="metric-description">{metric.description}</span>
           </article>
         ))}
@@ -91,28 +106,29 @@ export default function ResultSummary({ scenarios, run, leaderboard, onReplay, o
         <section className="leaderboard-section">
           <div className="section-heading">
             <div><span className="eyebrow-mark">04</span><h2>Podium des participants</h2></div>
-            <span className="choice-count">MEILLEUR SCORE PAR PSEUDO</span>
+            <span className="choice-count">SCORE, PUIS TEMPS TOTAL</span>
           </div>
-          {participantRank > 0 && <p className="leaderboard-rank">Votre meilleur résultat : <strong>#{participantRank}</strong> sur le podium partagé.</p>}
+          {participantRank > 0 && <p className="leaderboard-rank">Votre rang : <strong>#{participantRank}</strong>. En cas d’égalité de score, le temps total le plus court passe devant.</p>}
           {podium.length === 0
             ? <p className="leaderboard-empty">Le classement apparaîtra après le premier parcours terminé.</p>
             : (
               <>
                 <div className="podium-grid">
-                  {podium.map((entry, index) => (
-                    <article className={`podium-card podium-place-${index + 1}`} key={entry.username}>
-                      <span className="podium-medal">{['1er', '2e', '3e'][index]}</span>
+                  {podium.map((entry) => (
+                    <article className={`podium-card podium-place-${Math.min(entry.rank, 3)}`} key={entry.username}>
+                      <span className="podium-medal">{entry.rank === 1 ? '1er' : `${entry.rank}e`}</span>
                       <strong>{entry.username}</strong>
                       <span>{entry.score}%</span>
+                      <small className="podium-time">{formatElapsedTime(entry.elapsedMs)}</small>
                     </article>
                   ))}
                 </div>
                 <ol className="leaderboard-list">
-                  {leaderboard.map((entry, index) => (
+                  {rankedLeaderboard.map((entry) => (
                     <li className={entry.username.toLocaleLowerCase() === username.toLocaleLowerCase() ? 'leaderboard-self' : ''} key={entry.username}>
-                      <span>{String(index + 1).padStart(2, '0')}</span>
+                      <span>{String(entry.rank).padStart(2, '0')}</span>
                       <strong>{entry.username}</strong>
-                      <small>{entry.scenarioCount} scénarios · {entry.decisionCount} décisions</small>
+                      <small>{entry.decisionCount} décisions · Temps {formatElapsedTime(entry.elapsedMs)}</small>
                       <b>{entry.score}%</b>
                     </li>
                   ))}

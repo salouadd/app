@@ -16,6 +16,7 @@ DecisionLab est un simulateur de décisions. L’hébergement Vercel et Supabase
 7. Ouvre l’adresse Vercel et affiche le QR code. Les participants le scannent, saisissent un pseudo et attendent. Dans **Accès organisateur**, saisis le code privé et clique **Démarrer pour tout le monde**. Seul un organisateur authentifié voit l’onglet **Créateur de scénario**.
 
 Après le parcours, les scores apparaissent dans le podium partagé. L’organisateur peut créer une nouvelle session pour le groupe suivant.
+Après l’ajout du champ `elapsed_ms` au schéma, réexécute [`supabase/schema.sql`](./supabase/schema.sql) dans l’éditeur SQL Supabase avant de redéployer.
 
 ## Développement local
 
@@ -30,8 +31,10 @@ En local, l’API et l’application tournent sur le même ordinateur. Pour test
 
 ## Règles du parcours
 
-- Le parcours partagé comprend les quatre scénarios intégrés, soit seize questions. Seul l’organisateur authentifié peut créer, importer ou modifier des scénarios personnalisés ; ceux-ci restent locaux à son navigateur et ne sont pas ajoutés au parcours partagé.
+- Le parcours partagé comprend quatre scénarios NAC/Zero Trust, continuité NAC, réponse CoA et gouvernance ISO 22301, soit seize questions. Seul l’organisateur authentifié peut créer, importer ou modifier des scénarios personnalisés ; ceux-ci restent locaux à son navigateur et ne sont pas ajoutés au parcours partagé.
 - Le chronomètre dure 45 secondes (débutant), 40 (intermédiaire), 35 (avancé) ou 30 (expert). Une question sans réponse est enregistrée comme telle, sans modifier les scores, puis le parcours continue automatiquement.
 - La position de la réponse recommandée est mélangée et répartie entre A, B, C et D selon le nombre de choix.
 - Le serveur valide l’historique et recalcule les scores à partir des réponses reçues.
+- Le score global commence à 0 et ne progresse qu’avec les réponses recommandées ; 16 bonnes réponses sur 16 donnent 100 %. Une erreur ou une question expirée ne retire pas les points déjà gagnés. Les trois jauges détaillent séparément les impacts de sécurité, disponibilité et logique.
+- Le podium classe d’abord le score global, puis le temps total de la session (du départ de l’organisateur à la fin du parcours), le plus court d’abord. Un score et un temps identiques partagent le même rang.
 - Les pseudos et réponses restent déclaratifs : ce podium n’est pas une preuve d’identité ni un classement inviolable. Une personne peut usurper un pseudo ; n’utilise pas d’informations sensibles.

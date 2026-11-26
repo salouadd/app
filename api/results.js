@@ -9,7 +9,7 @@ export default async function handler(request, response) {
     response.status(405).json({ error: 'Méthode non autorisée.' });
     return;
   }
-  const { checkInId, scores, scenarioIds, history, decisionCount } = request.body || {};
+  const { checkInId, scores, score, elapsedMs, scenarioIds, history, decisionCount } = request.body || {};
   if (typeof checkInId !== 'string' || !Array.isArray(scenarioIds) ||
       scenarioIds.length < 1 || scenarioIds.length > 20 ||
       !scenarioIds.every((id) => typeof id === 'string') ||
@@ -25,12 +25,18 @@ export default async function handler(request, response) {
     response.status(400).json({ error: 'Les scores doivent être des nombres entiers compris entre 0 et 100.' });
     return;
   }
+  if (!Number.isInteger(score) || score < 0 || score > 100 ||
+      !Number.isSafeInteger(elapsedMs) || elapsedMs < 0 || elapsedMs > 86400000) {
+    response.status(400).json({ error: 'Le score global ou le temps total est invalide.' });
+    return;
+  }
   const verification = validateRun(scenarioIds, history, defaultScenarios);
   if (!verification.valid) {
     response.status(400).json({ error: verification.error });
     return;
   }
-  if (metricKeys.some((key) => scores[key] !== verification.scores[key])) {
+  if (metricKeys.some((key) => scores[key] !== verification.scores[key]) ||
+      score !== verification.accuracyScore) {
     response.status(400).json({ error: 'Les scores ne correspondent pas aux réponses enregistrées.' });
     return;
   }
@@ -63,12 +69,12 @@ export default async function handler(request, response) {
       return;
     }
 
-    const score = Math.round(metricKeys.reduce((total, key) => total + verification.scores[key], 0) / metricKeys.length);
     const { error: resultError } = await database.from('quiz_results').insert({
       check_in_id: checkInId,
       session_id: participant.session_id,
       username: participant.username,
-      score,
+      score: verification.accuracyScore,
+      elapsed_ms: elapsedMs,
       scores: verification.scores,
       scenario_count: scenarioIds.length,
       decision_count: decisionCount,
@@ -98,7 +104,7 @@ export default async function handler(request, response) {
       if (completeError) throw completeError;
     }
 
-    response.status(201).json({ username: participant.username, score });
+    response.status(201).json({ username: participant.username, score: verification.accuracyScore, elapsedMs });
   } catch (error) {
     sendServerError(response, 'Échec d’enregistrement du résultat.', error);
   }
