@@ -197,6 +197,12 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  function confirmSimulationExit() {
+    if (window.confirm('Quitter le quiz ? La progression actuelle sera perdue.')) {
+      returnToCatalog();
+    }
+  }
+
   async function finishScenario(completedRun) {
     const startedAtMs = Date.parse(completedRun.startedAt);
     const elapsedMs = Number.isFinite(startedAtMs)
@@ -279,13 +285,21 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="site-header">
-        <a className="brand" href="#" onClick={(event) => { event.preventDefault(); returnToCatalog(); }}>
+        <a className="brand" href="#" onClick={(event) => {
+          event.preventDefault();
+          if (screen === 'simulation') confirmSimulationExit();
+          else returnToCatalog();
+        }}>
           <IconMark /><span>DECISION<span className="brand-light">LAB</span></span><span className="brand-version">SIM / 01</span>
         </a>
-        <nav className="main-nav" aria-label="Navigation principale">
-          <button className={activeTab === 'catalog' ? 'nav-item active' : 'nav-item'} onClick={() => { returnToCatalog(); setActiveTab('catalog'); }}>Scénarios</button>
-          {organizerAuthorized && <button className={activeTab === 'builder' ? 'nav-item active' : 'nav-item'} onClick={() => { setSession({ screen: 'catalog', run: null }); setActiveTab('builder'); }}>Créateur de scénario</button>}
-        </nav>
+        {screen === 'simulation' ? (
+          <div className="main-nav simulation-nav" aria-label="Navigation principale">QUIZ EN COURS</div>
+        ) : (
+          <nav className="main-nav" aria-label="Navigation principale">
+            <button className={activeTab === 'catalog' ? 'nav-item active' : 'nav-item'} onClick={() => { returnToCatalog(); setActiveTab('catalog'); }}>Scénarios</button>
+            {organizerAuthorized && screen === 'catalog' && <button className={activeTab === 'builder' ? 'nav-item active' : 'nav-item'} onClick={() => { setSession({ screen: 'catalog', run: null }); setActiveTab('builder'); }}>Créateur de scénario</button>}
+          </nav>
+        )}
         <div className="header-status"><span className="live-dot" /> CLASSEMENT PARTAGÉ</div>
       </header>
 
@@ -312,7 +326,7 @@ export default function App() {
             onRunChange={(nextRun) => setSession((current) => ({ ...current, run: nextRun }))}
             onProgress={saveParticipantProgress}
             onFinish={(completedRun) => finishScenario(completedRun || run)}
-            onExit={returnToCatalog}
+            onExit={confirmSimulationExit}
           />
         ) : screen === 'results' && resultScenarios.length > 0 && run ? (
           <ResultSummary

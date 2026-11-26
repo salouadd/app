@@ -125,6 +125,9 @@ export default function Simulator({ scenario, run, leaderboard, onProgress, onRu
 
   const selectedOption = step.options.find((option) => option.id === selectedId);
   const pathPosition = run.history.filter((entry) => entry.scenarioId === scenario.id).length + 1;
+  const scoreGain = selectedOption
+    ? run.accuracyScore - Math.round(((run.correctAnswers - Number(selectedOption.recommended)) / run.totalQuestions) * 100)
+    : 0;
   function chooseOption(option) {
     if (selectedId) return;
     setSelectedId(option.id);
@@ -262,11 +265,9 @@ export default function Simulator({ scenario, run, leaderboard, onProgress, onRu
               <div className="bias-note"><span>↳</span>{selectedOption.bias}</div>
               <div className="consequence-footer">
                 <div className="impact-list">
-                  {scoreLabels.map(({ key, short }) => (
-                    <span key={key} className={(selectedOption.impact[key] ?? 0) >= 0 ? 'impact-up' : 'impact-down'}>
-                      {short} {(selectedOption.impact[key] ?? 0) >= 0 ? '+' : ''}{selectedOption.impact[key] ?? 0}
-                    </span>
-                  ))}
+                  <span className={scoreGain > 0 ? 'impact-up' : 'impact-neutral'}>
+                    SCORE GLOBAL {scoreGain > 0 ? '+' : ''}{scoreGain}%
+                  </span>
                 </div>
                 <button className="button button-primary" disabled={progressSaving} onClick={continueScenario}>
                   {progressSaving ? 'Actualisation du classement…' : selectedOption.next ? 'Étape suivante' : 'Voir mon bilan'} <span>→</span>
