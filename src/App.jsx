@@ -8,7 +8,7 @@ import { createRun, getCurrentRunTime, getTotalQuestionCount } from './lib/scena
 
 const STORAGE_KEYS = {
   customScenarios: 'decisionlab.customScenarios.v1',
-  progress: 'decisionlab.progress.v2',
+  progress: 'decisionlab.progress.v3',
 };
 
 function readStorage(key, fallback) {
@@ -69,7 +69,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('catalog');
   const [organizerAuthorized, setOrganizerAuthorized] = useState(false);
   const [notice, setNotice] = useState('');
-  const [leaderboard, setLeaderboard] = useState([]);
   const progressSaveQueue = useRef(Promise.resolve());
   const scenarios = useMemo(
     () => [...defaultScenarios, ...(organizerAuthorized ? customScenarios : [])],
@@ -96,27 +95,6 @@ export default function App() {
       setNotice('Progression non sauvegardée : le stockage local du navigateur est indisponible ou saturé.');
     }
   }, [run, screen]);
-
-  useEffect(() => {
-    if (screen !== 'results' || !run?.participant) return undefined;
-    let active = true;
-    const sessionId = run?.participant?.sessionId;
-    const query = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
-    fetch(`/api/leaderboard${query}`)
-      .then(async (response) => {
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.error || 'Le classement est indisponible.');
-        return body.leaderboard;
-      })
-      .then((entries) => {
-        if (active) setLeaderboard(entries);
-      })
-      .catch((error) => {
-        console.error('Impossible de charger le classement.', error);
-        if (active) setNotice('Le classement partagé est indisponible pour le moment.');
-      });
-    return () => { active = false; };
-  }, [screen, run?.participant?.sessionId]);
 
   function startGroupCheckIn() {
     setNotice('');
@@ -159,16 +137,11 @@ export default function App() {
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'Impossible d’enregistrer la progression.');
-
-      const leaderboardResponse = await fetch(`/api/leaderboard?sessionId=${encodeURIComponent(progressRun.participant.sessionId)}`);
-      const leaderboardBody = await leaderboardResponse.json();
-      if (!leaderboardResponse.ok) throw new Error(leaderboardBody.error || 'Impossible d’actualiser le classement.');
-      setLeaderboard(leaderboardBody.leaderboard);
     });
     progressSaveQueue.current = request.catch(() => {});
     return request.catch((error) => {
-      console.error('Impossible de publier la progression dans le classement.', error);
-      setNotice(`Classement provisoire non actualisé : ${error.message}`);
+      console.error('Impossible d’enregistrer la progression.', error);
+      setNotice(`Progression non enregistrée : ${error.message}`);
       throw error;
     });
   }
@@ -221,7 +194,10 @@ export default function App() {
           stepId: nextScenario.steps[0].id,
           stepStartedAt: getCurrentRunTime(completedRun),
           pendingNext: null,
+          pendingRecovery: null,
+          recovery: null,
           pendingOptionId: null,
+          pendingReflection: '',
         },
       });
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -300,7 +276,7 @@ export default function App() {
             {organizerAuthorized && screen === 'catalog' && <button className={activeTab === 'builder' ? 'nav-item active' : 'nav-item'} onClick={() => { setSession({ screen: 'catalog', run: null }); setActiveTab('builder'); }}>Créateur de scénario</button>}
           </nav>
         )}
-        <div className="header-status"><span className="live-dot" /> CLASSEMENT PARTAGÉ</div>
+        <div className="header-status"><span className="live-dot" /> SUIVI INDIVIDUEL</div>
       </header>
 
       {notice && <div className="storage-notice" role="alert">{notice}<button onClick={() => setNotice('')} aria-label="Fermer">×</button></div>}
@@ -322,7 +298,6 @@ export default function App() {
             key={`${activeScenario.id}-${run.scenarioIndex}`}
             scenario={activeScenario}
             run={run}
-            leaderboard={leaderboard}
             onRunChange={(nextRun) => setSession((current) => ({ ...current, run: nextRun }))}
             onProgress={saveParticipantProgress}
             onFinish={(completedRun) => finishScenario(completedRun || run)}
@@ -332,7 +307,6 @@ export default function App() {
           <ResultSummary
             scenarios={resultScenarios}
             run={run}
-            leaderboard={leaderboard}
             onReplay={replay}
             onCatalog={returnToCatalog}
           />
@@ -347,7 +321,7 @@ export default function App() {
                   <button className="button button-primary" onClick={startGroupCheckIn}>Démarrer les scénarios <span>→</span></button>
                   <a className="button button-secondary" href="#scenarios">Explorer le catalogue <span>↓</span></a>
                 </div>
-                <span className="hero-caption">QR CHECK-IN · PARCOURS COMPLET · PODIUM</span>
+                <span className="hero-caption">QR CHECK-IN · SUIVI 0–100 % · RAPPORT PERSONNALISÉ</span>
               </div>
               <div className="hero-console" aria-label="Aperçu du tableau de bord DecisionLab">
                 <div className="console-top"><span><i /> LIVE SIMULATION</span><span>SYS / DL-001</span></div>
@@ -366,7 +340,7 @@ export default function App() {
             <section className="catalog-section" id="scenarios">
               <div className="catalog-heading">
                 <div><div className="eyebrow"><span className="eyebrow-mark">01</span> PARCOURS D’ENTRAÎNEMENT</div><h2>Choisissez votre <span>mise en situation.</span></h2></div>
-                <p>Le parcours complet enchaîne les {defaultScenarios.length} scénarios intégrés en un seul check-in et enregistre le score au podium.</p>
+                <p>Le parcours enchaîne {defaultScenarios.length} scénarios, suit votre progression et prépare un bilan personnalisé à la fin.</p>
               </div>
               <div className="scenario-grid">
                 {scenarios.map((scenario, index) => <ScenarioCard key={scenario.id} scenario={scenario} index={index} />)}
@@ -384,7 +358,7 @@ export default function App() {
         )}
       </div>
 
-      <footer className="site-footer"><span><IconMark /> DECISIONLAB <span className="footer-muted">— SIMULATEUR DE RAISONNEMENT OPÉRATIONNEL</span></span><span>QR CHECK-IN · CLASSEMENT PARTAGÉ</span></footer>
+      <footer className="site-footer"><span><IconMark /> DECISIONLAB <span className="footer-muted">— SIMULATEUR DE RAISONNEMENT OPÉRATIONNEL</span></span><span>QR CHECK-IN · RAPPORT PERSONNALISÉ</span></footer>
     </div>
   );
 }

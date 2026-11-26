@@ -14,8 +14,50 @@ const timerSecondsByDifficulty = {
   Expert: 30,
 };
 
+export const MAX_RECOVERY_ATTEMPTS = 3;
+
 export function getTimerSeconds(difficulty) {
   return timerSecondsByDifficulty[difficulty] ?? 40;
+}
+
+export function getCompletedMainQuestionCount(history) {
+  return history.filter((entry) => !entry.isRecovery).length;
+}
+
+export function getRunProgressPercent(run) {
+  if (!run.totalQuestions) return 0;
+  return Math.min(100, Math.round((getCompletedMainQuestionCount(run.history) / run.totalQuestions) * 100));
+}
+
+export function getDecisionTransition(scenario, step, option, recovery, answered) {
+  if (step.recovery) {
+    const attempts = (recovery?.attempts ?? 0) + 1;
+    if ((answered && option.recommended) || attempts >= MAX_RECOVERY_ATTEMPTS) {
+      return { nextStepId: recovery?.returnStepId ?? null, recovery: null, attempts };
+    }
+    return {
+      nextStepId: step.id,
+      recovery: { ...recovery, attempts, lastStepId: step.id, lastOptionId: answered ? option.id : null },
+      attempts,
+    };
+  }
+
+  if (!answered || !option.recommended) {
+    return {
+      nextStepId: scenario.recoveryStepId,
+      recovery: {
+        returnStepId: option.rejoin !== undefined ? option.rejoin : option.next ?? null,
+        attempts: 0,
+        originStepId: step.id,
+        originOptionId: option.id,
+        lastStepId: step.id,
+        lastOptionId: answered ? option.id : null,
+      },
+      attempts: 0,
+    };
+  }
+
+  return { nextStepId: option.next ?? null, recovery: null, attempts: 0 };
 }
 
 export function getScenarioQuestionCount(scenario) {
@@ -48,7 +90,7 @@ export function getDecisionProfile(scenarios, history) {
   const responseTimes = [];
 
   for (const entry of history) {
-    if (!entry.optionId) continue;
+    if (!entry.optionId || entry.isRecovery) continue;
     const scenario = scenariosById.get(entry.scenarioId);
     const step = scenario?.steps.find((item) => item.id === entry.stepId);
     const option = step?.options.find((item) => item.id === entry.optionId);
@@ -91,26 +133,8 @@ export function getCurrentRunTime(run) {
 export function calculateAccuracyScore(history, totalQuestions) {
   if (!totalQuestions) return 0;
   const correctAnswers = history.filter((entry) =>
-    entry.optionId && entry.optionId === entry.recommendedOptionId).length;
+    !entry.isRecovery && entry.optionId && entry.optionId === entry.recommendedOptionId).length;
   return Math.round((correctAnswers / totalQuestions) * 100);
-}
-
-export function compareLeaderboardEntries(first, second) {
-  return second.score - first.score ||
-    first.elapsedMs - second.elapsedMs ||
-    Date.parse(first.completedAt) - Date.parse(second.completedAt);
-}
-
-export function rankLeaderboardEntries(entries) {
-  const rankedEntries = [];
-  entries.forEach((entry, index) => {
-    const previous = rankedEntries[index - 1];
-    const isTied = previous &&
-      previous.score === entry.score &&
-      previous.elapsedMs === entry.elapsedMs;
-    rankedEntries.push({ ...entry, rank: isTied ? previous.rank : index + 1 });
-  });
-  return rankedEntries;
 }
 
 export function formatElapsedTime(milliseconds) {
@@ -151,7 +175,10 @@ export function createRun(scenarios, participant = null, startedAt = new Date().
     totalQuestions,
     history: [],
     pendingNext: null,
+    pendingRecovery: null,
     pendingOptionId: null,
+    recovery: null,
+    pendingReflection: '',
     optionOrders: createOptionOrders(scenarios),
     participant,
     startedAt,

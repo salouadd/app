@@ -1,5 +1,4 @@
 import { getActiveSession, getSupabase, sendServerError } from '../lib/supabase.js';
-import { compareLeaderboardEntries } from '../src/lib/scenarioRun.js';
 
 export default async function handler(request, response) {
   if (request.method !== 'GET') {
@@ -15,18 +14,16 @@ export default async function handler(request, response) {
         .from('quiz_results')
         .select('check_in_id, username, score, elapsed_ms, scores, scenario_count, decision_count, created_at')
         .eq('session_id', requestedSessionId)
-        .order('score', { ascending: false })
-        .order('elapsed_ms', { ascending: true })
+        .order('username', { ascending: true })
         .order('created_at', { ascending: true })
-        .limit(20),
+        .limit(100),
       database
         .from('quiz_progress')
         .select('check_in_id, username, score, elapsed_ms, scores, scenario_count, decision_count, updated_at')
         .eq('session_id', requestedSessionId)
-        .order('score', { ascending: false })
-        .order('elapsed_ms', { ascending: true })
+        .order('username', { ascending: true })
         .order('updated_at', { ascending: true })
-        .limit(20),
+        .limit(100),
     ]);
     if (resultsResponse.error) throw resultsResponse.error;
     if (progressResponse.error) throw progressResponse.error;
@@ -53,11 +50,9 @@ export default async function handler(request, response) {
       });
     });
     response.status(200).json({
-      leaderboard: Array.from(entriesByCheckIn.values())
-        .sort(compareLeaderboardEntries)
-        .slice(0, 20),
+      progress: Array.from(entriesByCheckIn.values()).slice(0, 100),
     });
   } catch (error) {
-    sendServerError(response, 'Échec de chargement du classement.', error);
+    sendServerError(response, 'Échec de chargement des progressions.', error);
   }
 }

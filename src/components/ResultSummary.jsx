@@ -1,8 +1,8 @@
+import { useState } from 'react';
 import {
   formatElapsedTime,
   getDecisionProfile,
   getRecommendedTrajectory,
-  rankLeaderboardEntries,
 } from '../lib/scenarioRun.js';
 
 const metricDetails = [
@@ -28,18 +28,57 @@ function findCascadeDecision(scenarios, history) {
   return null;
 }
 
-export default function ResultSummary({ scenarios, run, leaderboard, onReplay, onCatalog }) {
+export default function ResultSummary({ scenarios, run, onReplay, onCatalog }) {
+  const [report, setReport] = useState(run.aiReport || null);
+  const [reportError, setReportError] = useState('');
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportConsent, setReportConsent] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState('');
   const profile = getDecisionProfile(scenarios, run.history);
   const recommendedScores = getRecommendedTrajectory(scenarios);
   const cascadeDecision = findCascadeDecision(scenarios, run.history);
   const scenariosById = new Map(scenarios.map((scenario) => [scenario.id, scenario]));
   const username = run.participant?.username;
-  const rankedLeaderboard = rankLeaderboardEntries(leaderboard);
-  const participantEntry = username
-    ? rankedLeaderboard.find((entry) => entry.username.toLocaleLowerCase() === username.toLocaleLowerCase())
-    : null;
-  const participantRank = participantEntry?.rank || 0;
-  const podium = rankedLeaderboard.filter((entry) => entry.rank <= 3);
+
+  async function generateReport() {
+    if (!reportConsent || !run.participant?.checkInId || !run.participant?.sessionId) return;
+    setReportLoading(true);
+    setReportError('');
+    try {
+      const response = await fetch('/api/report', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          checkInId: run.participant.checkInId,
+          sessionId: run.participant.sessionId,
+          consent: reportConsent,
+          scenarioIds: run.scenarioIds,
+          history: run.history,
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || 'Impossible de générer le rapport.');
+      setReport(body.report);
+    } catch (error) {
+      setReportError(error.message);
+    } finally {
+      setReportLoading(false);
+    }
+  }
+
+  async function downloadPdf() {
+    setPdfLoading(true);
+    setPdfError('');
+    try {
+      const { downloadReportPdf } = await import('../lib/reportPdf.js');
+      downloadReportPdf(report, run.accuracyScore);
+    } catch (error) {
+      setPdfError(error instanceof Error ? error.message : 'Impossible de créer le rapport PDF.');
+    } finally {
+      setPdfLoading(false);
+    }
+  }
 
   return (
     <div className="results-view">
@@ -55,9 +94,8 @@ export default function ResultSummary({ scenarios, run, leaderboard, onReplay, o
         {metricDetails.map((metric) => (
           <article className="result-metric panel" key={metric.key}>
             <div className="metric-topline"><span className={`status-dot ${metric.color}`} /><span>{metric.label}</span></div>
-            <div className="metric-number">{run.accuracyScore}<small>%</small></div>
-            <div className="meter-track"><div className={`meter-fill ${metric.color}`} style={{ width: `${run.accuracyScore}%` }} /></div>
-            <span className="metric-description">{metric.description}</span>
+            <div className="metric-number">{run.scores[metric.key]}<small>%</small></div>
+            <div className="meter-track"><div className={`meter-fill ${metric.color}`} style={{ width: `${run.scores[metric.key]}%` }} /></div>
           </article>
         ))}
       </section>
@@ -100,42 +138,48 @@ export default function ResultSummary({ scenarios, run, leaderboard, onReplay, o
         </section>
       )}
 
-      {username && (
-        <section className="leaderboard-section">
-          <div className="section-heading">
-            <div><span className="eyebrow-mark">04</span><h2>Podium des participants</h2></div>
-            <span className="choice-count">SCORE, PUIS TEMPS TOTAL</span>
+      <section className="ai-report-section">
+        <div className="section-heading">
+          <div><span className="eyebrow-mark">04</span><h2>Votre rapport personnalisé</h2></div>
+          <span className="choice-count">ANALYSE IA · GROQ</span>
+        </div>
+        {!report && (
+          <div className="report-consent">
+            <p>Le rapport analyse vos choix, leurs conséquences, votre rythme et les réflexions que vous avez écrites. Pour le générer, ces données sont envoyées à Groq, sans votre pseudo ni votre identifiant ; le rapport généré est conservé dans la base de l’application. N’écrivez aucune information personnelle ou sensible.</p>
+            <label>
+              <input checked={reportConsent} onChange={(event) => setReportConsent(event.target.checked)} type="checkbox" />
+              J’accepte l’envoi de mes réponses et réflexions à Groq pour créer mon rapport.
+            </label>
+            <button className="button button-primary" disabled={!reportConsent || reportLoading} onClick={generateReport} type="button">
+              {reportLoading ? 'Analyse de votre parcours…' : 'Générer mon rapport IA'} <span>→</span>
+            </button>
+            {reportError && <p className="report-error" role="alert">{reportError}</p>}
           </div>
-          {participantRank > 0 && <p className="leaderboard-rank">Votre rang : <strong>#{participantRank}</strong>. En cas d’égalité de score, le temps total le plus court passe devant.</p>}
-          {podium.length === 0
-            ? <p className="leaderboard-empty">Le classement apparaîtra après le premier parcours terminé.</p>
-            : (
-              <>
-                <div className="podium-grid">
-                  {podium.map((entry) => (
-                    <article className={`podium-card podium-place-${Math.min(entry.rank, 3)}`} key={entry.username}>
-                      <span className="podium-medal">{entry.rank === 1 ? '1er' : `${entry.rank}e`}</span>
-                      <strong>{entry.username}</strong>
-                      <span>{entry.score}%</span>
-                      <small className="podium-time">{formatElapsedTime(entry.elapsedMs)}</small>
-                    </article>
-                  ))}
-                </div>
-                <ol className="leaderboard-list">
-                  {rankedLeaderboard.map((entry) => (
-                    <li className={entry.username.toLocaleLowerCase() === username.toLocaleLowerCase() ? 'leaderboard-self' : ''} key={entry.username}>
-                      <span>{String(entry.rank).padStart(2, '0')}</span>
-                      <strong>{entry.username}</strong>
-                      <small>{entry.decisionCount} décisions · Temps {formatElapsedTime(entry.elapsedMs)}</small>
-                      <b>{entry.score}%</b>
-                    </li>
-                  ))}
-                </ol>
-              </>
-            )}
-          <small className="leaderboard-disclaimer">Les pseudos et les réponses sont déclaratifs : ce podium ne vérifie pas l’identité et n’est pas un classement inviolable.</small>
-        </section>
-      )}
+        )}
+        {report && (
+          <div className="ai-report">
+            <p className="ai-report-summary">{report.summary}</p>
+            <div className="ai-report-columns">
+              <section>
+                <h3>Points forts</h3>
+                {report.strengths.map((item, index) => <article key={`strength-${index}`}><strong>{item.title}</strong><p>{item.detail}</p></article>)}
+              </section>
+              <section>
+                <h3>À améliorer</h3>
+                {report.improvements.map((item, index) => <article key={`improvement-${index}`}><strong>{item.title}</strong><p>{item.detail}</p></article>)}
+              </section>
+            </div>
+            <section className="ai-report-next">
+              <h3>Prochaines étapes</h3>
+              <ol>{report.nextSteps.map((item, index) => <li key={`next-${index}`}>{item}</li>)}</ol>
+            </section>
+            <button className="button button-primary" disabled={pdfLoading} onClick={downloadPdf} type="button">
+              {pdfLoading ? 'Préparation du PDF…' : 'Télécharger le rapport PDF'} <span>↓</span>
+            </button>
+            {pdfError && <p className="report-error" role="alert">{pdfError}</p>}
+          </div>
+        )}
+      </section>
 
       <section className="timeline-section">
         <div className="section-heading">

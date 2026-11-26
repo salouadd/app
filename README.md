@@ -1,6 +1,6 @@
 # DecisionLab
 
-DecisionLab est un simulateur de décisions. L’hébergement Vercel et Supabase permet aux participants de rejoindre depuis différents appareils, d’attendre le départ de l’organisateur et de partager un classement.
+DecisionLab est un simulateur de décisions. L’hébergement Vercel et Supabase permet aux participants de rejoindre depuis différents appareils, d’attendre le départ de l’organisateur et de suivre leur progression individuelle.
 
 ## Mise en ligne sur Vercel
 
@@ -12,15 +12,15 @@ DecisionLab est un simulateur de décisions. L’hébergement Vercel et Supabase
    - `SUPABASE_URL` : l’URL du projet Supabase.
    - `SUPABASE_SERVICE_ROLE_KEY` : la clé secrète `service_role` de Supabase. Elle doit rester côté serveur ; ne la préfixe jamais par `VITE_`.
    - `ORGANIZER_CODE` : un code long et privé, connu uniquement de l’organisateur.
+   - `GROQ_API_KEY` : la clé secrète créée dans le tableau de bord Groq. Elle reste côté serveur, sans préfixe `VITE_`.
 6. Déploie ou redéploie le projet après avoir ajouté les variables.
 7. Ouvre l’adresse Vercel et affiche le QR code. Les participants le scannent, saisissent un pseudo et attendent. Dans **Accès organisateur**, saisis le code privé et clique **Démarrer pour tout le monde**. Seul un organisateur authentifié voit l’onglet **Créateur de scénario**.
 
-Après chaque réponse, la progression apparaît dans le classement partagé et dans la section **Classement actuel** du panneau organisateur. Les résultats finaux remplacent automatiquement les progressions provisoires. L’organisateur peut créer une nouvelle session pour le groupe suivant.
-Après les changements de classement, réexécute [`supabase/schema.sql`](./supabase/schema.sql) dans l’éditeur SQL Supabase pour créer la table de progression et ajouter le champ `elapsed_ms`, puis redéploie.
+Après chaque réponse, la progression individuelle apparaît dans le quiz et dans le panneau organisateur. À la fin du parcours, le participant peut consentir à l’envoi de ses réponses à Groq pour l’analyse; le rapport généré est conservé dans la base de l’application et peut être téléchargé en PDF. Réexécute [`supabase/schema.sql`](./supabase/schema.sql) dans l’éditeur SQL Supabase pour ajouter le champ de rapport IA, puis redéploie.
 
 ## Développement local
 
-Copie `.env.example` vers `.env.local`, remplis l’URL Supabase et la clé secrète, puis choisis un code organisateur privé. Lance ensuite :
+Copie `.env.example` vers `.env.local`, remplis les variables Supabase, ajoute `GROQ_API_KEY` pour activer les rapports IA et choisis un code organisateur privé. Ne partage ni ne publie ces clés. Lance ensuite :
 
 ```powershell
 npm.cmd install
@@ -31,11 +31,9 @@ En local, l’API et l’application tournent sur le même ordinateur. Pour test
 
 ## Règles du parcours
 
-- Le parcours partagé comprend quatre scénarios NAC/Zero Trust, continuité NAC, réponse CoA et gouvernance ISO 22301, soit seize décisions par participant. Dans le scénario de continuité NAC, certains choix ouvrent une question différente et modifient la suite du parcours. Seul l’organisateur authentifié peut créer, importer ou modifier des scénarios personnalisés ; ceux-ci restent locaux à son navigateur et ne sont pas ajoutés au parcours partagé.
-- Le chronomètre dure 45 secondes (débutant), 40 (intermédiaire), 35 (avancé) ou 30 (expert). Une question sans réponse est enregistrée comme telle, sans modifier les scores, puis le parcours continue automatiquement.
+- Le parcours partagé comprend quatre scénarios NAC/Zero Trust, continuité NAC, réponse CoA et gouvernance ISO 22301. Chaque mauvaise réponse ou expiration ouvre une question de correction liée au choix; une bonne réponse ramène au parcours principal. Après trois tentatives de correction, le participant reprend le parcours. Le suivi de 0 à 100 % compte les seize décisions principales, pas les questions de correction.
+- Le chronomètre dure 45 secondes (débutant), 40 (intermédiaire), 35 (avancé) ou 30 (expert). Une expiration ne rapporte pas de bonne réponse et déclenche la branche de correction.
 - La position de la réponse recommandée est mélangée et répartie entre A, B, C et D selon le nombre de choix.
-- Le serveur valide l’historique et recalcule les scores à partir des réponses reçues.
-- Le score global commence à 0 et ne progresse qu’avec les réponses recommandées ; 16 bonnes réponses sur 16 donnent 100 %. Une erreur ou une question expirée ne retire pas les points déjà gagnés. Les conséquences des décisions restent détaillées dans le débrief.
-- Le bilan final présente une tendance décisionnelle propre aux compromis réalisés, le rythme moyen de réponse et une comparaison des indicateurs avec la trajectoire conseillée. Cette tendance décrit uniquement les choix de la simulation, pas la personnalité du participant.
-- Le podium classe d’abord le score global, puis le temps total de la session (du départ de l’organisateur à la fin du parcours), le plus court d’abord. Un score et un temps identiques partagent le même rang.
-- Les pseudos et réponses restent déclaratifs : ce podium n’est pas une preuve d’identité ni un classement inviolable. Une personne peut usurper un pseudo ; n’utilise pas d’informations sensibles.
+- Le serveur valide le chemin suivi, limite les corrections à trois tentatives et recalcule les résultats à partir des réponses.
+- Le rapport final met en évidence des points forts et des axes de progression à partir des décisions, de leurs conséquences, du temps de réponse et des réflexions facultatives. Il ne prétend pas décrire la personnalité du participant.
+- Les réponses et réflexions ne sont envoyées à Groq qu’après consentement explicite. Le pseudo et l’identifiant du participant ne sont pas transmis au modèle. Le rapport est stocké dans Supabase avec le résultat. Ne saisissez aucune information personnelle ou sensible.

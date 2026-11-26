@@ -71,7 +71,7 @@ export default async function handler(request, response) {
         elapsed_ms: elapsedMs,
         scores: verification.scores,
         scenario_count: scenarioIds.length,
-        decision_count: decisionCount,
+        decision_count: verification.mainQuestionCount,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'check_in_id' });
     if (progressError) throw progressError;
@@ -79,7 +79,7 @@ export default async function handler(request, response) {
     response.status(200).json({
       username: participant.username,
       score: verification.accuracyScore,
-      decisionCount,
+      decisionCount: verification.mainQuestionCount,
     });
   } catch (error) {
     sendServerError(response, 'Échec d’enregistrement de la progression.', error);

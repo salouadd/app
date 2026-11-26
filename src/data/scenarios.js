@@ -16,7 +16,13 @@ function question(id, title, context, alert, constraint, options, routeLabel = n
   return { id, title, context, alert, constraint, options, routeLabel };
 }
 
-function scenario({ id, title, domain, difficulty, duration, objective, description, accent, steps, questionCount }) {
+function scenario({ id, title, domain, difficulty, duration, objective, description, accent, steps, questionCount, recoveryStepId }) {
+  function getMainPathNext(index) {
+    const recommended = steps[index].options.find((option) => option.recommended);
+    if (recommended?.next !== undefined && recommended.next !== recoveryStepId) return recommended.next;
+    return steps.slice(index + 1).find((step) => step.id !== recoveryStepId)?.id ?? null;
+  }
+
   return {
     id,
     title,
@@ -27,12 +33,16 @@ function scenario({ id, title, domain, difficulty, duration, objective, descript
     description,
     accent,
     questionCount: questionCount ?? steps.length,
+    recoveryStepId,
     steps: steps.map((step, index) => ({
       ...step,
-      options: step.options.map((option) => ({
-        ...option,
-        next: option.next !== undefined ? option.next : steps[index + 1]?.id ?? null,
-      })),
+      recovery: step.id === recoveryStepId,
+      options: step.options.map((option) => {
+        if (step.id === recoveryStepId) return { ...option, next: null };
+        const next = getMainPathNext(index);
+        if (!option.recommended) return { ...option, next: recoveryStepId, rejoin: next };
+        return { ...option, next: option.next !== undefined ? option.next : next };
+      }),
     })),
   };
 }
@@ -47,6 +57,8 @@ export const defaultScenarios = [
     objective: 'Contrôler l’accès dès le port réseau et n’autoriser que les identités et équipements conformes.',
     description: 'Un port non contrôlé du réseau plat VLAN 10 a laissé apparaître un équipement inconnu. Concevoir une réponse défensive fondée sur 802.1X et des politiques RADIUS.',
     accent: 'cyan',
+    questionCount: 4,
+    recoveryStepId: 'zt-branch-response',
     steps: [
       question(
         'zt-diagnose',
@@ -56,8 +68,8 @@ export const defaultScenarios = [
         'Confirmer les faits avant toute modification large',
         [
           answer('zt-correlate', 'Corréler port, adresse MAC, bail DHCP et événements NAC, puis contenir ce seul port', 'Les journaux du switch, DHCP et NAC donnent une chronologie défensive.', 'Le point d’entrée est isolé sans perturber les équipements légitimes du VLAN.', 'Biais évité : modifier tout le réseau à partir d’un seul signal.', true),
-          answer('zt-disable-vlan', 'Désactiver immédiatement tout le VLAN 10', 'La mesure est large alors que le périmètre observé est un seul port.', 'La disponibilité du segment est interrompue sans résoudre la cause du défaut de contrôle.', 'Biais commis : confondre ampleur de la mesure et précision.', false, { security: 12, availability: -24, logic: -12 }),
-          answer('zt-ignore', 'Conserver le port ouvert car aucune panne utilisateur n’est signalée', 'L’absence de plainte ne démontre pas que l’équipement est autorisé.', 'L’accès inconnu reste possible et les traces ne sont pas exploitées.', 'Biais commis : prendre l’absence d’impact visible pour une preuve de sûreté.', false, { security: -20, availability: 2, logic: -12 }),
+          { ...answer('zt-disable-vlan', 'Désactiver immédiatement tout le VLAN 10', 'La mesure est large alors que le périmètre observé est un seul port.', 'La disponibilité du segment est interrompue sans résoudre la cause du défaut de contrôle.', 'Biais commis : confondre ampleur de la mesure et précision.', false, { security: 12, availability: -24, logic: -12 }), next: 'zt-branch-response' },
+          { ...answer('zt-ignore', 'Conserver le port ouvert car aucune panne utilisateur n’est signalée', 'L’absence de plainte ne démontre pas que l’équipement est autorisé.', 'L’accès inconnu reste possible et les traces ne sont pas exploitées.', 'Biais commis : prendre l’absence d’impact visible pour une preuve de sûreté.', false, { security: -20, availability: 2, logic: -12 }), next: 'zt-branch-response' },
         ],
       ),
       question(
@@ -67,10 +79,23 @@ export const defaultScenarios = [
         'Aucune authentification de port · accès avant attribution contrôlée',
         'Choisir un mécanisme maintenable avec validation du serveur RADIUS',
         [
-          answer('zt-dot1x', 'Déployer 802.1X avec une méthode EAP validée et certificats serveur vérifiés', 'Le port attend la décision RADIUS avant d’accorder l’accès prévu par la politique.', 'L’authentification est liée à une identité et l’échange protège contre un serveur d’authentification non vérifié.', 'Biais évité : confondre une adresse matérielle avec une identité.', true),
-          answer('zt-mac-filter', 'S’appuyer uniquement sur une liste d’adresses MAC autorisées', 'La liste est simple à démarrer, mais ne fournit pas une authentification forte.', 'Une adresse copiée peut contourner le contrôle et la gestion manuelle devient fragile.', 'Biais commis : assimiler identifiant observable et preuve d’identité.', false, { security: -12, availability: 3, logic: -9 }),
-          answer('zt-open-fallback', 'Autoriser tout port si le serveur RADIUS ne répond pas', 'Ce comportement de secours transforme une panne de contrôle en accès ouvert.', 'Le service paraît disponible, mais les équipements inconnus peuvent rejoindre le réseau.', 'Biais commis : privilégier la disponibilité sans borner le mode dégradé.', false, { security: -24, availability: 14, logic: -14 }),
+          { ...answer('zt-dot1x', 'Déployer 802.1X avec une méthode EAP validée et certificats serveur vérifiés', 'Le port attend la décision RADIUS avant d’accorder l’accès prévu par la politique.', 'L’authentification est liée à une identité et l’échange protège contre un serveur d’authentification non vérifié.', 'Biais évité : confondre une adresse matérielle avec une identité.', true), next: 'zt-radius-policy' },
+          { ...answer('zt-mac-filter', 'S’appuyer uniquement sur une liste d’adresses MAC autorisées', 'La liste est simple à démarrer, mais ne fournit pas une authentification forte.', 'Une adresse copiée peut contourner le contrôle et la gestion manuelle devient fragile.', 'Biais commis : assimiler identifiant observable et preuve d’identité.', false, { security: -12, availability: 3, logic: -9 }), next: 'zt-radius-policy' },
+          { ...answer('zt-open-fallback', 'Autoriser tout port si le serveur RADIUS ne répond pas', 'Ce comportement de secours transforme une panne de contrôle en accès ouvert.', 'Le service paraît disponible, mais les équipements inconnus peuvent rejoindre le réseau.', 'Biais commis : privilégier la disponibilité sans borner le mode dégradé.', false, { security: -24, availability: 14, logic: -14 }), next: 'zt-radius-policy' },
         ],
+      ),
+      question(
+        'zt-branch-response',
+        'Corriger l’impact de la première décision',
+        'La coupure du VLAN a aussi bloqué des équipements légitimes, ou le port inconnu est resté accessible. Revenir à un périmètre précis avant de déployer le contrôle d’accès.',
+        'Périmètre de réponse inadapté · service ou contrôle à rétablir',
+        'Limiter l’action au port concerné et conserver les éléments de diagnostic',
+        [
+          answer('zt-scope-recovery', 'Rétablir le VLAN, isoler uniquement le port concerné et préserver les journaux', 'La mesure est recentrée sur le point d’accès observé et reste réversible.', 'Les utilisateurs légitimes retrouvent le service tandis que le port inconnu est contenu.', 'Biais évité : corriger une mesure imprécise par une action mesurée.', true, { security: 10, availability: 8, logic: 10 }),
+          answer('zt-maintain-outage', 'Maintenir tout le VLAN coupé jusqu’à la fin de l’analyse', 'La coupure générale se prolonge alors que le périmètre est limité.', 'Les utilisateurs légitimes restent privés de service sans gain de précision.', 'Biais commis : confondre durée de la mesure et efficacité du confinement.', false, { security: 8, availability: -16, logic: -12 }),
+          answer('zt-leave-open', 'Garder le port ouvert et reprendre l’analyse plus tard', 'L’absence de nouvelle alerte ne retire pas l’accès inconnu.', 'Le défaut de contrôle reste présent pendant la suite du déploiement.', 'Biais commis : repousser une mesure ciblée malgré les signaux disponibles.', false, { security: -18, availability: 2, logic: -12 }),
+        ],
+        'CHEMIN ALTERNATIF · PÉRIMÈTRE À CORRIGER',
       ),
       question(
         'zt-radius-policy',
@@ -108,6 +133,7 @@ export const defaultScenarios = [
     description: 'À 08 h 30, PacketFence sur DC1 devient injoignable. Arbitrer entre continuité des sessions, authentification locale de secours et Critical VLAN.',
     accent: 'emerald',
     questionCount: 4,
+    recoveryStepId: 'survival-branch-response',
     steps: [
       question(
         'survival-existing',
@@ -181,6 +207,8 @@ export const defaultScenarios = [
     objective: 'Révoquer une session compromise de façon ciblée, préserver les preuves et vérifier la quarantaine.',
     description: 'Un poste employé déjà authentifié manifeste un comportement latéral suspect. Utiliser une réponse d’accès dynamique sans couper les autres employés.',
     accent: 'amber',
+    questionCount: 4,
+    recoveryStepId: 'coa-branch-response',
     steps: [
       question(
         'coa-qualify',
@@ -190,8 +218,8 @@ export const defaultScenarios = [
         'Corréler les alertes et contenir seulement le périmètre confirmé',
         [
           answer('coa-correlate', 'Corréler identité, port `ens34`, événements NAC et télémétrie avant action ciblée', 'Les signaux indépendants confirment l’équipement et la session concernés.', 'La réponse peut viser un poste sans isoler les employés non impliqués.', 'Biais évité : transformer une alerte en preuve sans corroboration.', true),
-          answer('coa-isolate-vlan', 'Couper immédiatement tout le VLAN 11', 'L’alerte concerne un poste mais la mesure affecte toute la production.', 'La disponibilité est fortement réduite sans améliorer la précision de l’enquête.', 'Biais commis : confondre périmètre du signal et périmètre de la mesure.', false, { security: 12, availability: -25, logic: -9 }),
-          answer('coa-ignore', 'Ne rien faire puisque 802.1X a déjà authentifié l’utilisateur', 'L’authentification initiale correspond à l’état au temps t0 et ne garantit pas la session actuelle.', 'Un poste compromis conserve son accès interne pendant l’analyse.', 'Biais commis : confondre identité valide et comportement toujours sûr.', false, { security: -22, availability: 2, logic: -14 }),
+          { ...answer('coa-isolate-vlan', 'Couper immédiatement tout le VLAN 11', 'L’alerte concerne un poste mais la mesure affecte toute la production.', 'La disponibilité est fortement réduite sans améliorer la précision de l’enquête.', 'Biais commis : confondre périmètre du signal et périmètre de la mesure.', false, { security: 12, availability: -25, logic: -9 }), next: 'coa-branch-response' },
+          { ...answer('coa-ignore', 'Ne rien faire puisque 802.1X a déjà authentifié l’utilisateur', 'L’authentification initiale correspond à l’état au temps t0 et ne garantit pas la session actuelle.', 'Un poste compromis conserve son accès interne pendant l’analyse.', 'Biais commis : confondre identité valide et comportement toujours sûr.', false, { security: -22, availability: 2, logic: -14 }), next: 'coa-branch-response' },
         ],
       ),
       question(
@@ -201,10 +229,23 @@ export const defaultScenarios = [
         'Session suspecte confirmée · autres sessions normales',
         'S’assurer que la demande vise la session exacte et que son résultat sera vérifié',
         [
-          answer('coa-targeted-disconnect', 'Envoyer une demande Disconnect ciblée via le mécanisme NAC et vérifier l’accusé de réception', 'Le contrôleur utilise le flux CoA/Disconnect prévu et confirme la session visée.', 'La révocation à chaud cible le poste sans débrancher les autres utilisateurs.', 'Biais évité : remplacer une révocation précise par une coupure physique ou globale.', true),
-          answer('coa-revoke-account-only', 'Réinitialiser le mot de passe sans révoquer la session active', 'Une modification de compte ne met pas forcément fin à une session déjà autorisée.', 'Le poste peut conserver temporairement son accès réseau.', 'Biais commis : traiter l’identité sans contenir l’équipement.', false, { security: -8, availability: 2, logic: -10 }),
-          answer('coa-reboot-switch', 'Redémarrer le switch pour interrompre toutes les sessions', 'L’action dépasse largement le périmètre confirmé.', 'Les utilisateurs sains subissent une interruption évitable et les preuves peuvent être perdues.', 'Biais commis : privilégier une action visible à une réponse ciblée.', false, { security: 5, availability: -25, logic: -15 }),
+          { ...answer('coa-targeted-disconnect', 'Envoyer une demande Disconnect ciblée via le mécanisme NAC et vérifier l’accusé de réception', 'Le contrôleur utilise le flux CoA/Disconnect prévu et confirme la session visée.', 'La révocation à chaud cible le poste sans débrancher les autres utilisateurs.', 'Biais évité : remplacer une révocation précise par une coupure physique ou globale.', true), next: 'coa-quarantine' },
+          { ...answer('coa-revoke-account-only', 'Réinitialiser le mot de passe sans révoquer la session active', 'Une modification de compte ne met pas forcément fin à une session déjà autorisée.', 'Le poste peut conserver temporairement son accès réseau.', 'Biais commis : traiter l’identité sans contenir l’équipement.', false, { security: -8, availability: 2, logic: -10 }), next: 'coa-quarantine' },
+          { ...answer('coa-reboot-switch', 'Redémarrer le switch pour interrompre toutes les sessions', 'L’action dépasse largement le périmètre confirmé.', 'Les utilisateurs sains subissent une interruption évitable et les preuves peuvent être perdues.', 'Biais commis : privilégier une action visible à une réponse ciblée.', false, { security: 5, availability: -25, logic: -15 }), next: 'coa-quarantine' },
         ],
+      ),
+      question(
+        'coa-branch-response',
+        'Recentrer la réponse sur la session suspecte',
+        'La coupure du VLAN a affecté des utilisateurs sains, ou la session suspecte est restée active. Reprendre le contrôle à partir du port et de l’identité confirmés.',
+        'Réponse trop large ou accès suspect encore actif',
+        'Contenir la session ciblée, puis contrôler le résultat sur le port concerné',
+        [
+          answer('coa-targeted-recovery', 'Cibler la session suspecte, conserver les journaux et confirmer l’état du port', 'La réponse se limite à l’équipement confirmé et les événements restent disponibles pour l’enquête.', 'La production est rétablie hors du périmètre suspect, qui peut être vérifié en quarantaine.', 'Biais évité : laisser une mesure excessive ou insuffisante sans correction.', true, { security: 10, availability: 8, logic: 10 }),
+          answer('coa-keep-global-isolation', 'Maintenir tout le VLAN isolé jusqu’à la fin de l’investigation', 'La mesure reste beaucoup plus large que l’alerte corroborée.', 'Les autres employés restent bloqués sans bénéfice équivalent pour l’enquête.', 'Biais commis : oublier de réduire le périmètre après le confinement initial.', false, { security: 8, availability: -18, logic: -12 }),
+          answer('coa-leave-session-active', 'Reporter la révocation de la session jusqu’au rapport final', 'Le poste suspect garde son accès pendant toute la durée de l’analyse.', 'L’activité anormale peut continuer avant la mise en quarantaine.', 'Biais commis : différer le confinement malgré un signal confirmé.', false, { security: -19, availability: 2, logic: -13 }),
+        ],
+        'CHEMIN ALTERNATIF · SESSION À RECENTRER',
       ),
       question(
         'coa-quarantine',
@@ -241,6 +282,8 @@ export const defaultScenarios = [
     objective: 'Vérifier les objectifs de reprise et organiser un retour à la normale contrôlé, mesurable et adapté au budget.',
     description: 'DC1 est rétabli après un incident majeur. Piloter la reprise du service NAC, les journaux de secours et le choix d’architecture.',
     accent: 'emerald',
+    questionCount: 4,
+    recoveryStepId: 'iso-branch-response',
     steps: [
       question(
         'iso-objectives',
@@ -250,8 +293,8 @@ export const defaultScenarios = [
         'Comparer les temps réellement observés aux objectifs métier approuvés',
         [
           answer('iso-measure', 'Mesurer le temps de détection, de bascule et la cohérence des données répliquées', 'Comparer les résultats observés aux objectifs RTO < 1 min et RPO = 0.', 'Les écarts sont documentés et le plan est corrigé à partir de preuves.', 'Biais évité : confondre objectif inscrit et capacité démontrée.', true),
-          answer('iso-assume', 'Déclarer le RTO et le RPO atteints car le service répond à nouveau', 'Le retour du service ne renseigne ni sur la durée exacte ni sur les données manquantes.', 'Le rapport de continuité annonce des garanties non vérifiées.', 'Biais commis : conclure à partir d’un seul indicateur.', false, { security: 1, availability: 4, logic: -16 }),
-          answer('iso-ignore', 'Ne pas mesurer pour éviter de révéler un écart', 'L’absence de mesure empêche toute amélioration et réduit l’auditabilité.', 'Les risques de reprise restent inconnus jusqu’au prochain incident.', 'Biais commis : confondre absence de preuve et absence de problème.', false, { security: -7, availability: -6, logic: -18 }),
+          { ...answer('iso-assume', 'Déclarer le RTO et le RPO atteints car le service répond à nouveau', 'Le retour du service ne renseigne ni sur la durée exacte ni sur les données manquantes.', 'Le rapport de continuité annonce des garanties non vérifiées.', 'Biais commis : conclure à partir d’un seul indicateur.', false, { security: 1, availability: 4, logic: -16 }), next: 'iso-branch-response' },
+          { ...answer('iso-ignore', 'Ne pas mesurer pour éviter de révéler un écart', 'L’absence de mesure empêche toute amélioration et réduit l’auditabilité.', 'Les risques de reprise restent inconnus jusqu’au prochain incident.', 'Biais commis : confondre absence de preuve et absence de problème.', false, { security: -7, availability: -6, logic: -18 }), next: 'iso-branch-response' },
         ],
       ),
       question(
@@ -261,10 +304,23 @@ export const defaultScenarios = [
         'Réplication et journaux locaux disponibles · revue d’accès requise',
         'Ne jamais exposer les secrets de secours dans le rapport ou le chat',
         [
-          answer('iso-audit-evidence', 'Vérifier la réplication, les droits minimaux et la continuité des journaux sur les deux nœuds', 'Consigner les références et résultats sans copier les secrets d’authentification.', 'Les preuves de reprise sont protégées et exploitables pour l’audit.', 'Biais évité : documenter des secrets au lieu de documenter les contrôles.', true),
-          answer('iso-share-secrets', 'Joindre les identifiants de secours en clair au rapport de crise', 'La traçabilité ne nécessite pas de divulguer des secrets.', 'Le rapport devient une nouvelle source d’exposition.', 'Biais commis : confondre preuve d’existence et partage de credential.', false, { security: -24, availability: 0, logic: -13 }),
-          answer('iso-disable-logs', 'Supprimer les journaux locaux après la reprise', 'Les journaux sont nécessaires pour comprendre la bascule et prouver le RPO.', 'La capacité d’audit et d’analyse post-incident est réduite.', 'Biais commis : réduire le stockage au détriment de la preuve.', false, { security: -12, availability: 0, logic: -15 }),
+          { ...answer('iso-audit-evidence', 'Vérifier la réplication, les droits minimaux et la continuité des journaux sur les deux nœuds', 'Consigner les références et résultats sans copier les secrets d’authentification.', 'Les preuves de reprise sont protégées et exploitables pour l’audit.', 'Biais évité : documenter des secrets au lieu de documenter les contrôles.', true), next: 'iso-failback' },
+          { ...answer('iso-share-secrets', 'Joindre les identifiants de secours en clair au rapport de crise', 'La traçabilité ne nécessite pas de divulguer des secrets.', 'Le rapport devient une nouvelle source d’exposition.', 'Biais commis : confondre preuve d’existence et partage de credential.', false, { security: -24, availability: 0, logic: -13 }), next: 'iso-failback' },
+          { ...answer('iso-disable-logs', 'Supprimer les journaux locaux après la reprise', 'Les journaux sont nécessaires pour comprendre la bascule et prouver le RPO.', 'La capacité d’audit et d’analyse post-incident est réduite.', 'Biais commis : réduire le stockage au détriment de la preuve.', false, { security: -12, availability: 0, logic: -15 }), next: 'iso-failback' },
         ],
+      ),
+      question(
+        'iso-branch-response',
+        'Reconstituer les preuves de reprise',
+        'Le rapport annonce des objectifs atteints sans mesure, ou les données de l’exercice n’ont pas été exploitées. Il faut établir un bilan vérifiable avant de décider du retour à la normale.',
+        'RTO/RPO non démontrés · éléments de reprise à consolider',
+        'Distinguer les résultats mesurés des objectifs déclarés',
+        [
+          answer('iso-reconstruct-evidence', 'Reconstituer la chronologie, relever les écarts et corriger le rapport sans exposer de secrets', 'Les preuves disponibles permettent de qualifier les temps et la cohérence des données.', 'Le plan de reprise est ajusté sur des résultats vérifiables plutôt que sur des hypothèses.', 'Biais évité : répéter une conclusion non démontrée dans le rapport final.', true, { security: 10, availability: 8, logic: 10 }),
+          answer('iso-repeat-assumption', 'Conserver les objectifs déclarés comme résultats de l’exercice', 'La disponibilité actuelle ne prouve toujours pas le RTO ni le RPO.', 'Les écarts éventuels restent invisibles et le plan ne s’améliore pas.', 'Biais commis : remplacer une mesure absente par une affirmation répétée.', false, { security: -2, availability: 2, logic: -18 }),
+          answer('iso-discard-evidence', 'Écarter les journaux incomplets et clore le bilan', 'Une preuve partielle peut encore aider à qualifier les limites de l’exercice.', 'L’auditabilité baisse et les mêmes inconnues persistent pour le prochain incident.', 'Biais commis : traiter une preuve imparfaite comme une preuve inutile.', false, { security: -8, availability: -5, logic: -16 }),
+        ],
+        'CHEMIN ALTERNATIF · BILAN À ÉTABLIR',
       ),
       question(
         'iso-failback',

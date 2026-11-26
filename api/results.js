@@ -77,7 +77,7 @@ export default async function handler(request, response) {
       elapsed_ms: elapsedMs,
       scores: verification.scores,
       scenario_count: scenarioIds.length,
-      decision_count: decisionCount,
+      decision_count: verification.mainQuestionCount,
     });
     if (resultError?.code === '23505') {
       response.status(409).json({ error: 'Un résultat a déjà été enregistré pour ce check-in.' });

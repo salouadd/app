@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
-import { formatElapsedTime, rankLeaderboardEntries } from '../lib/scenarioRun.js';
+import { formatElapsedTime, getTotalQuestionCount } from '../lib/scenarioRun.js';
+import { defaultScenarios } from '../data/scenarios.js';
+
+const totalQuestions = getTotalQuestionCount(defaultScenarios);
 
 async function organizerRequest(action, code) {
   const response = await fetch('/api/session', {
@@ -20,7 +23,7 @@ export default function OrganizerPanel({ onAuthorizationChange }) {
   const [authorized, setAuthorized] = useState(false);
   const [session, setSession] = useState(null);
   const [participants, setParticipants] = useState([]);
-  const [leaderboard, setLeaderboard] = useState([]);
+  const [progressRecords, setProgressRecords] = useState([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -31,11 +34,11 @@ export default function OrganizerPanel({ onAuthorizationChange }) {
     setError('');
   }
 
-  async function refreshLeaderboard(sessionId, isActive = () => true) {
-    const response = await fetch(`/api/leaderboard?sessionId=${encodeURIComponent(sessionId)}`);
+  async function refreshProgress(sessionId, isActive = () => true) {
+    const response = await fetch(`/api/progress-summary?sessionId=${encodeURIComponent(sessionId)}`);
     const body = await response.json();
-    if (!response.ok) throw new Error(body.error || 'Impossible de charger les résultats.');
-    if (isActive()) setLeaderboard(rankLeaderboardEntries(body.leaderboard));
+    if (!response.ok) throw new Error(body.error || 'Impossible de charger les progressions.');
+    if (isActive()) setProgressRecords(body.progress);
   }
 
   useEffect(() => {
@@ -49,7 +52,7 @@ export default function OrganizerPanel({ onAuthorizationChange }) {
           setParticipants(body.participants);
           setError('');
         }
-        await refreshLeaderboard(body.session.id, () => active);
+        await refreshProgress(body.session.id, () => active);
       } catch (requestError) {
         if (active) setError(requestError.message);
       }
@@ -85,7 +88,7 @@ export default function OrganizerPanel({ onAuthorizationChange }) {
       setSession(body.session);
       if (action === 'reset') {
         setParticipants([]);
-        setLeaderboard([]);
+        setProgressRecords([]);
       }
       else await refreshStatus();
     } catch (requestError) {
@@ -129,20 +132,20 @@ export default function OrganizerPanel({ onAuthorizationChange }) {
           )}
           <section className="organizer-results" aria-live="polite">
             <div className="organizer-results-heading">
-              <h3>Classement actuel</h3>
-              <span>{leaderboard.filter((entry) => entry.status === 'terminé').length}/{leaderboard.length} terminé(s)</span>
+              <h3>Progression du groupe</h3>
+              <span>{progressRecords.filter((entry) => entry.status === 'terminé').length}/{progressRecords.length} terminé(s)</span>
             </div>
-            {leaderboard.length === 0
-              ? <p>Le classement apparaîtra dès qu’un participant aura répondu à une question.</p>
+            {progressRecords.length === 0
+              ? <p>La progression apparaîtra dès qu’un participant aura répondu à une question.</p>
               : (
-                <ol className="organizer-result-list">
-                  {leaderboard.map((entry) => (
+                <ul className="organizer-result-list">
+                  {progressRecords.map((entry) => (
                     <li key={entry.username}>
-                      <div><strong>#{entry.rank} {entry.username}</strong><b>{entry.score}%</b></div>
-                      <small>{entry.status} · Temps total {formatElapsedTime(entry.elapsedMs)}</small>
+                      <div><strong>{entry.username}</strong><b>{entry.score}% score · {Math.round((entry.decisionCount / totalQuestions) * 100)}% progression</b></div>
+                      <small>{entry.status} · {entry.decisionCount}/{totalQuestions} décisions · Temps {formatElapsedTime(entry.elapsedMs)}</small>
                     </li>
                   ))}
-                </ol>
+                </ul>
               )}
           </section>
           {session?.status === 'waiting' ? (
@@ -154,7 +157,7 @@ export default function OrganizerPanel({ onAuthorizationChange }) {
               {busy ? 'Préparation…' : 'Créer une nouvelle session'}
             </button>
           )}
-          <button className="organizer-logout" onClick={() => { setAuthorized(false); setCode(''); setSession(null); setLeaderboard([]); onAuthorizationChange(false); }} type="button">Fermer le panneau</button>
+          <button className="organizer-logout" onClick={() => { setAuthorized(false); setCode(''); setSession(null); setProgressRecords([]); onAuthorizationChange(false); }} type="button">Fermer le panneau</button>
         </div>
       )}
       {error && <p className="check-in-error" role="alert">{error}</p>}

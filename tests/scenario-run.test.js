@@ -2,14 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { defaultScenarios } from '../src/data/scenarios.js';
 import {
-  compareLeaderboardEntries,
   createOptionOrders,
   createRun,
+  getDecisionTransition,
   getDecisionProfile,
   getRecommendedTrajectory,
   getTimerSeconds,
   getTotalQuestionCount,
-  rankLeaderboardEntries,
 } from '../src/lib/scenarioRun.js';
 import { validateProgress, validateRun } from '../lib/validateRun.js';
 
@@ -17,15 +16,22 @@ function createHistory(scenarios, chooseOption = (_scenario, step) => step.optio
   return scenarios.flatMap((scenario) => {
     const history = [];
     let step = scenario.steps[0];
+    let recovery = null;
     while (step) {
       const option = chooseOption(scenario, step);
+      const transition = getDecisionTransition(scenario, step, option, recovery, true);
       history.push({
         scenarioId: scenario.id,
         stepId: step.id,
+        isRecovery: Boolean(step.recovery),
         optionId: option.id,
         recommendedOptionId: step.options.find((item) => item.recommended).id,
+        recoveryAttempt: step.recovery ? transition.attempts : undefined,
       });
-      step = option.next ? scenario.steps.find((item) => item.id === option.next) : null;
+      recovery = transition.recovery;
+      step = transition.nextStepId
+        ? scenario.steps.find((item) => item.id === transition.nextStepId)
+        : null;
     }
     return history;
   });
@@ -96,25 +102,68 @@ test('the global score starts at zero and only correct answers raise it', () => 
   assert.equal(result.accuracyScore, 50);
 });
 
-test('a decision can change the next question and the server validates that branch', () => {
-  const history = createHistory(defaultScenarios, (scenario, step) => {
-    if (step.id === 'survival-existing') {
-      return step.options.find((option) => option.id === 'survival-open-all');
-    }
-    return step.options.find((option) => option.recommended);
-  });
+test('every shared scenario has a validated recovery branch and keeps its main question count', () => {
+  const history = createHistory(defaultScenarios, (scenario, step) => (
+    step.id === scenario.steps[0].id
+      ? step.options.find((option) => !option.recommended)
+      : step.options.find((option) => option.recommended)
+  ));
   const result = validateRun(defaultScenarios.map((scenario) => scenario.id), history, defaultScenarios);
-  const branch = history.find((entry) => entry.scenarioId === 'nac-survival');
 
   assert.equal(result.valid, true);
-  assert.equal(history.some((entry) => entry.stepId === 'survival-branch-response'), true);
-  assert.equal(history.some((entry) => entry.stepId === 'survival-auth'), false);
+  for (const scenario of defaultScenarios) {
+    const scenarioHistory = history.filter((entry) => entry.scenarioId === scenario.id);
+    const firstStep = scenario.steps[0];
+    const recommended = firstStep.options.find((option) => option.recommended);
+    const alternative = firstStep.options.find((option) => !option.recommended);
+    assert.notEqual(alternative.next, recommended.next, `${scenario.id} must branch after a non-recommended choice`);
+    assert.equal(scenarioHistory[1].stepId, alternative.next);
+    assert.equal(scenarioHistory.filter((entry) => !entry.isRecovery).length, scenario.questionCount);
+    assert.equal(scenarioHistory[1].isRecovery, true);
+  }
 
+  const firstScenario = defaultScenarios[0];
   const invalidHistory = history.map((entry) => (
-    entry.stepId === 'survival-branch-response' ? { ...entry, stepId: 'survival-auth' } : entry
+    entry.scenarioId === firstScenario.id && entry.stepId === history[1].stepId
+      ? { ...entry, stepId: firstScenario.steps[1].id }
+      : entry
   ));
   assert.equal(validateRun(defaultScenarios.map((scenario) => scenario.id), invalidHistory, defaultScenarios).valid, false);
-  assert.equal(branch.stepId, 'survival-existing');
+});
+
+test('recovery questions repeat up to three times without inflating the main decision score', () => {
+  const history = createHistory(defaultScenarios, (scenario, step) => (
+    step.recovery
+      ? step.options.find((option) => !option.recommended)
+      : scenario.id === defaultScenarios[0].id && step.id === scenario.steps[0].id
+        ? step.options.find((option) => !option.recommended)
+        : step.options.find((option) => option.recommended)
+  ));
+  const result = validateRun(defaultScenarios.map((scenario) => scenario.id), history, defaultScenarios);
+  const recoveryAttempts = history.filter((entry) => entry.scenarioId === defaultScenarios[0].id && entry.isRecovery);
+
+  assert.equal(result.valid, true);
+  assert.equal(recoveryAttempts.length, 3);
+  assert.equal(result.correctAnswers, 15);
+});
+
+test('a recovery after the final main decision rejoins the next scenario instead of itself', () => {
+  const scenario = defaultScenarios[0];
+  const finalMainStep = [...scenario.steps].reverse().find((step) => !step.recovery);
+  const wrongOption = finalMainStep.options.find((option) => !option.recommended);
+  const branch = getDecisionTransition(scenario, finalMainStep, wrongOption, null, true);
+  const recoveryStep = scenario.steps.find((step) => step.id === branch.nextStepId);
+  const correction = getDecisionTransition(
+    scenario,
+    recoveryStep,
+    recoveryStep.options.find((option) => option.recommended),
+    branch.recovery,
+    true,
+  );
+
+  assert.equal(branch.nextStepId, scenario.recoveryStepId);
+  assert.equal(correction.nextStepId, null);
+  assert.equal(correction.recovery, null);
 });
 
 test('the debrief identifies decision tendencies and computes the recommended trajectory', () => {
@@ -151,16 +200,45 @@ test('partial progress is validated and scored against the complete run', () => 
   assert.equal(result.accuracyScore, 6);
 });
 
-test('leaderboard uses total completion time to break score ties', () => {
-  const entries = [
-    { username: 'Lina', score: 75, elapsedMs: 120000, completedAt: '2026-01-01T10:00:00Z' },
-    { username: 'Noah', score: 100, elapsedMs: 240000, completedAt: '2026-01-01T10:00:00Z' },
-    { username: 'Maya', score: 75, elapsedMs: 90000, completedAt: '2026-01-01T10:00:00Z' },
-    { username: 'Maya 2', score: 75, elapsedMs: 90000, completedAt: '2026-01-01T10:00:00Z' },
-  ];
-  const ranked = rankLeaderboardEntries(entries.sort(compareLeaderboardEntries));
-  assert.deepEqual(ranked.map((entry) => entry.username), ['Noah', 'Maya', 'Maya 2', 'Lina']);
-  assert.deepEqual(ranked.map((entry) => entry.rank), [1, 2, 2, 4]);
+test('a timed-out main question opens its recovery branch without awarding accuracy points', () => {
+  const [scenario] = defaultScenarios;
+  const firstStep = scenario.steps[0];
+  const recommended = firstStep.options.find((option) => option.recommended);
+  const branch = getDecisionTransition(scenario, firstStep, recommended, null, false);
+  const recoveryStep = scenario.steps.find((step) => step.id === branch.nextStepId);
+  const correction = getDecisionTransition(
+    scenario,
+    recoveryStep,
+    recoveryStep.options.find((option) => option.recommended),
+    branch.recovery,
+    true,
+  );
+  const result = validateProgress(
+    defaultScenarios.map((item) => item.id),
+    [
+      {
+        scenarioId: scenario.id,
+        stepId: firstStep.id,
+        isRecovery: false,
+        optionId: null,
+        recommendedOptionId: recommended.id,
+      },
+      {
+        scenarioId: scenario.id,
+        stepId: recoveryStep.id,
+        isRecovery: true,
+        optionId: recoveryStep.options.find((option) => option.recommended).id,
+        recommendedOptionId: recoveryStep.options.find((option) => option.recommended).id,
+        recoveryAttempt: correction.attempts,
+      },
+    ],
+    defaultScenarios,
+  );
+
+  assert.equal(result.valid, true);
+  assert.equal(result.correctAnswers, 0);
+  assert.equal(result.mainQuestionCount, 1);
+  assert.equal(result.accuracyScore, 0);
 });
 
 test('question timers match scenario difficulty', () => {
