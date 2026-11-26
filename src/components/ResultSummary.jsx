@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   formatElapsedTime,
   getDecisionProfile,
-  getRecommendedTrajectory,
 } from '../lib/scenarioRun.js';
+import { rankCompletedParticipants } from '../lib/leaderboard.js';
 
 const metricDetails = [
   { key: 'security', label: 'Sécurité / contrôle', color: 'cyan' },
@@ -35,11 +35,37 @@ export default function ResultSummary({ scenarios, run, onReplay, onCatalog }) {
   const [reportConsent, setReportConsent] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState('');
+  const [ranking, setRanking] = useState([]);
+  const [rankingLoading, setRankingLoading] = useState(Boolean(run.participant?.sessionId));
+  const [rankingError, setRankingError] = useState('');
+  const [rankingRefresh, setRankingRefresh] = useState(0);
   const profile = getDecisionProfile(scenarios, run.history);
-  const recommendedScores = getRecommendedTrajectory(scenarios);
   const cascadeDecision = findCascadeDecision(scenarios, run.history);
   const scenariosById = new Map(scenarios.map((scenario) => [scenario.id, scenario]));
   const username = run.participant?.username;
+  const sessionId = run.participant?.sessionId;
+
+  useEffect(() => {
+    if (!sessionId) return undefined;
+    let active = true;
+    async function loadRanking() {
+      setRankingLoading(true);
+      setRankingError('');
+      try {
+        const response = await fetch(`/api/progress-summary?sessionId=${encodeURIComponent(sessionId)}`);
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || 'Impossible de charger le classement final.');
+        if (!Array.isArray(body.progress)) throw new Error('Le classement reçu est invalide.');
+        if (active) setRanking(rankCompletedParticipants(body.progress));
+      } catch (error) {
+        if (active) setRankingError(error.message);
+      } finally {
+        if (active) setRankingLoading(false);
+      }
+    }
+    loadRanking();
+    return () => { active = false; };
+  }, [rankingRefresh, sessionId]);
 
   async function generateReport() {
     if (!reportConsent || !run.participant?.checkInId || !run.participant?.sessionId) return;
@@ -111,25 +137,35 @@ export default function ResultSummary({ scenarios, run, onReplay, onCatalog }) {
         </div>
       </section>
 
-      <section className="trajectory-section">
-        <div className="section-heading">
-          <div><span className="eyebrow-mark">04</span><h2>Votre trajectoire et le parcours conseillé</h2></div>
-          <span className="choice-count">INDICATEURS FINAUX</span>
-        </div>
-        <div className="trajectory-grid">
-          {metricDetails.map((metric) => (
-            <article className="trajectory-metric" key={metric.key}>
-              <div><span>{metric.label}</span><strong>{run.scores[metric.key]} / {recommendedScores[metric.key]}</strong></div>
-              <div className="trajectory-bars" aria-label={`${metric.label} : votre parcours ${run.scores[metric.key]}, parcours conseillé ${recommendedScores[metric.key]}`}>
-                <span className={`trajectory-bar ${metric.color}`} style={{ width: `${run.scores[metric.key]}%` }} />
-                <span className="trajectory-reference" style={{ left: `${recommendedScores[metric.key]}%` }} />
-              </div>
-              <small>Votre parcours / conseillé</small>
-            </article>
-          ))}
-        </div>
-        <p className="trajectory-note">La référence suit les réponses recommandées, y compris les embranchements qu’elles ouvrent.</p>
-      </section>
+      {sessionId && (
+        <section className="organizer-results final-ranking-section" aria-live="polite">
+          <div className="organizer-results-heading">
+            <h2>Classement final du groupe</h2>
+            <span>{ranking.length} participant(s)</span>
+          </div>
+          <p>Classement par score, puis par temps total. Les ex æquo partagent le même rang.</p>
+          {rankingLoading && <p>Chargement du classement…</p>}
+          {rankingError && (
+            <div className="final-ranking-error" role="alert">
+              <p>{rankingError}</p>
+              <button className="button button-secondary" onClick={() => setRankingRefresh((current) => current + 1)} type="button">
+                Réessayer
+              </button>
+            </div>
+          )}
+          {!rankingLoading && !rankingError && ranking.length > 0 && (
+            <ol className="organizer-result-list final-ranking-list">
+              {ranking.map((entry) => (
+                <li key={entry.username}>
+                  <div><strong>{entry.rank}. {entry.username}</strong><b>{entry.score}%</b></div>
+                  <small>Temps total : {formatElapsedTime(entry.elapsedMs)}</small>
+                </li>
+              ))}
+            </ol>
+          )}
+          {!rankingLoading && !rankingError && ranking.length === 0 && <p>Aucun résultat final n’est disponible pour cette session.</p>}
+        </section>
+      )}
 
       {cascadeDecision && (
         <section className="cascade-result-card">

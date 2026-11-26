@@ -16,7 +16,7 @@ DecisionLab est un simulateur de décisions. L’hébergement Vercel et Supabase
 6. Déploie ou redéploie le projet après avoir ajouté les variables.
 7. Ouvre l’adresse Vercel et affiche le QR code. Les participants le scannent, saisissent un pseudo et attendent. Dans **Accès organisateur**, saisis le code privé et clique **Démarrer pour tout le monde**. Seul un organisateur authentifié voit l’onglet **Créateur de scénario**.
 
-Après chaque réponse, la progression individuelle apparaît dans le quiz et dans le panneau organisateur. À la fin du parcours, chaque participant attend dans une salle dédiée jusqu’à ce que tout le groupe ait terminé; les bilans sont alors accessibles. Le participant peut consentir à l’envoi de ses réponses à Groq pour l’analyse; le rapport généré est conservé dans la base de l’application et peut être téléchargé en PDF. Réexécute [`supabase/schema.sql`](./supabase/schema.sql) dans l’éditeur SQL Supabase pour ajouter le champ de rapport IA, puis redéploie.
+Après chaque réponse, la progression individuelle apparaît dans le quiz et dans le panneau organisateur. À la fin du parcours, chaque participant attend dans une salle dédiée jusqu’à ce que tout le groupe ait terminé. Le classement final est alors affiché par score, puis par temps total; les ex æquo partagent le même rang. Le participant peut aussi consentir à l’envoi de ses réponses à Groq pour l’analyse; le rapport généré est conservé dans la base de l’application et peut être téléchargé en PDF. Réexécute [`supabase/schema.sql`](./supabase/schema.sql) dans l’éditeur SQL Supabase pour ajouter le champ de rapport IA, puis redéploie.
 
 ## Développement local
 

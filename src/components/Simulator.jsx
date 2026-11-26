@@ -39,6 +39,7 @@ export default function Simulator({ scenario, run, onProgress, onRunChange, onFi
   const [progressSaving, setProgressSaving] = useState(false);
   const [progressError, setProgressError] = useState('');
   const timeoutKey = useRef('');
+  const answeredKey = useRef('');
   const timeoutHandle = useRef(null);
   const step = useMemo(() => scenario.steps.find((item) => item.id === run.stepId), [scenario, run.stepId]);
   const displayedOptions = useMemo(() => {
@@ -78,7 +79,8 @@ export default function Simulator({ scenario, run, onProgress, onRunChange, onFi
 
   useEffect(() => {
     if (!step || secondsRemaining > 0 || timedOut) return;
-    const currentTimeoutKey = `${scenario.id}:${step.id}:${run.history.length}`;
+    const currentTimeoutKey = `${scenario.id}:${step.id}:${run.recovery?.attempts ?? 0}`;
+    if (!selectedId && answeredKey.current === currentTimeoutKey) return;
     if (timeoutKey.current === currentTimeoutKey) return;
     timeoutKey.current = currentTimeoutKey;
 
@@ -134,7 +136,6 @@ export default function Simulator({ scenario, run, onProgress, onRunChange, onFi
     timeoutHandle.current = window.setTimeout(() => {
       timeoutHandle.current = null;
       setTimedOut(false);
-      timeoutKey.current = '';
       if (transition.nextStepId) {
         onRunChange({
           ...expiredRun,
@@ -175,6 +176,7 @@ export default function Simulator({ scenario, run, onProgress, onRunChange, onFi
     : 0;
   function chooseOption(option) {
     if (selectedId) return;
+    answeredKey.current = `${scenario.id}:${step.id}:${run.recovery?.attempts ?? 0}`;
     setSelectedId(option.id);
     const transition = getDecisionTransition(scenario, step, option, run.recovery, true);
     const startedAtMs = Date.parse(run.stepStartedAt || run.startedAt || '');
@@ -216,11 +218,11 @@ export default function Simulator({ scenario, run, onProgress, onRunChange, onFi
 
   function continueScenario() {
     if (!selectedOption) return;
+    answeredKey.current = `${scenario.id}:${step.id}:${run.recovery?.attempts ?? 0}`;
     if (timeoutHandle.current) {
       window.clearTimeout(timeoutHandle.current);
       timeoutHandle.current = null;
     }
-    timeoutKey.current = '';
     setSelectedId(null);
     setNow(Date.now());
     if (!run.pendingNext) {

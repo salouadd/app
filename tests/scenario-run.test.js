@@ -11,6 +11,7 @@ import {
   getTotalQuestionCount,
 } from '../src/lib/scenarioRun.js';
 import { validateProgress, validateRun } from '../lib/validateRun.js';
+import { rankCompletedParticipants } from '../src/lib/leaderboard.js';
 
 function createHistory(scenarios, chooseOption = (_scenario, step) => step.options.find((option) => option.recommended)) {
   return scenarios.flatMap((scenario) => {
@@ -255,6 +256,23 @@ test('a timed-out main question opens its recovery branch without awarding accur
   assert.equal(result.correctAnswers, 0);
   assert.equal(result.mainQuestionCount, 1);
   assert.equal(result.accuracyScore, 0);
+});
+
+test('final standings sort by score then time and share identical ties', () => {
+  const ranking = rankCompletedParticipants([
+    { username: 'Late', score: 100, elapsedMs: 120000, status: 'terminé' },
+    { username: 'First', score: 100, elapsedMs: 90000, status: 'terminé' },
+    { username: 'Tie B', score: 100, elapsedMs: 90000, status: 'terminé' },
+    { username: 'Lower', score: 94, elapsedMs: 70000, status: 'terminé' },
+    { username: 'Active', score: 100, elapsedMs: 1000, status: 'en cours' },
+  ]);
+
+  assert.deepEqual(ranking.map(({ username, rank }) => [username, rank]), [
+    ['First', 1],
+    ['Tie B', 1],
+    ['Late', 3],
+    ['Lower', 4],
+  ]);
 });
 
 test('question timers match scenario difficulty', () => {
