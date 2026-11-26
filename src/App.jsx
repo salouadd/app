@@ -4,11 +4,11 @@ import CheckIn from './components/CheckIn.jsx';
 import ResultSummary from './components/ResultSummary.jsx';
 import ScenarioBuilder from './components/ScenarioBuilder.jsx';
 import Simulator from './components/Simulator.jsx';
-import { createRun, getCurrentRunTime } from './lib/scenarioRun.js';
+import { createRun, getCurrentRunTime, getTotalQuestionCount } from './lib/scenarioRun.js';
 
 const STORAGE_KEYS = {
   customScenarios: 'decisionlab.customScenarios.v1',
-  progress: 'decisionlab.progress.v1',
+  progress: 'decisionlab.progress.v2',
 };
 
 function readStorage(key, fallback) {
@@ -53,7 +53,7 @@ function ScenarioCard({ scenario, index }) {
       <p className="scenario-description">{scenario.description || scenario.objective}</p>
       <div className="scenario-objective"><span>OBJECTIF LOGIQUE</span><p>{scenario.objective}</p></div>
       <div className="scenario-card-footer">
-        <div className="scenario-meta"><span>◈ {scenario.difficulty}</span><span>◷ {scenario.duration}</span><span>▤ {scenario.steps.length} étapes</span></div>
+        <div className="scenario-meta"><span>◈ {scenario.difficulty}</span><span>◷ {scenario.duration}</span><span>▤ {scenario.questionCount ?? scenario.steps.length} étapes</span></div>
         <span className="scenario-open">{scenario.custom ? 'Local uniquement' : 'Inclus au parcours'} <span>✓</span></span>
       </div>
     </article>
@@ -311,7 +311,7 @@ export default function App() {
         ) : screen === 'checkin' ? (
           <CheckIn
             scenarioCount={defaultScenarios.length}
-            questionCount={defaultScenarios.reduce((total, scenario) => total + scenario.steps.length, 0)}
+            questionCount={getTotalQuestionCount(defaultScenarios)}
             onRegister={registerParticipant}
             onStart={startParticipantRun}
             onCancel={returnToCatalog}

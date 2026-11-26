@@ -90,6 +90,7 @@ export default function Simulator({ scenario, run, leaderboard, onProgress, onRu
         optionId: null,
         recommendedOptionId: recommended.id,
         impact: { security: 0, availability: 0, logic: 0 },
+        responseTimeMs: timerSeconds * 1000,
         consequence: 'Aucune réponse n’a été sélectionnée avant la fin du temps imparti.',
         bias: 'Question expirée : aucun choix n’a été enregistré.',
       }],
@@ -131,12 +132,14 @@ export default function Simulator({ scenario, run, leaderboard, onProgress, onRu
   function chooseOption(option) {
     if (selectedId) return;
     setSelectedId(option.id);
+    const startedAtMs = Date.parse(run.stepStartedAt || run.startedAt || '');
     const historyEntry = {
       scenarioId: scenario.id,
       stepId: step.id,
       optionId: option.id,
       recommendedOptionId: step.options.find((item) => item.recommended)?.id ?? step.options[0]?.id,
       impact: option.impact,
+      responseTimeMs: Number.isFinite(startedAtMs) ? Math.max(0, synchronizedNow - startedAtMs) : 0,
       consequence: option.consequence,
       bias: option.bias,
     };
@@ -207,7 +210,7 @@ export default function Simulator({ scenario, run, leaderboard, onProgress, onRu
 
       <div className="step-progress">
         <span>ÉTAPE {String(pathPosition).padStart(2, '0')}</span>
-        <div className="step-progress-track"><div style={{ width: `${Math.min(100, (pathPosition - 1) / scenario.steps.length * 100)}%` }} /></div>
+        <div className="step-progress-track"><div style={{ width: `${Math.min(100, (pathPosition - 1) / (scenario.questionCount ?? scenario.steps.length) * 100)}%` }} /></div>
         <span>{scenario.domain.toUpperCase()}</span>
         <strong className={`timer-countdown ${secondsRemaining <= 10 ? 'timer-warning' : ''}`} aria-label={`${secondsRemaining} secondes restantes`}>
           00:{String(secondsRemaining).padStart(2, '0')}
@@ -218,6 +221,7 @@ export default function Simulator({ scenario, run, leaderboard, onProgress, onRu
         <main className="simulation-main">
           <section className="briefing-card">
             <div className="eyebrow"><span className="eyebrow-mark">01</span> BRIEFING OPÉRATIONNEL</div>
+            {step.routeLabel && <div className="branch-route-note">{step.routeLabel}</div>}
             <h1>{step.title}</h1>
             <p className="briefing-context">{step.context}</p>
             <div className="alert-strip"><span className="alert-icon">!</span><div><span className="micro-label">ALERTE SYSTÈME</span><strong>{step.alert}</strong></div></div>
@@ -310,7 +314,7 @@ export default function Simulator({ scenario, run, leaderboard, onProgress, onRu
             <div className="aside-stat"><span>DIFFICULTÉ</span><strong>{scenario.difficulty}</strong></div>
             <div className="aside-stat"><span>TEMPS PAR QUESTION</span><strong>{timerSeconds} s</strong></div>
             <div className="aside-stat"><span>DURÉE ESTIMÉE</span><strong>{scenario.duration}</strong></div>
-            <div className="aside-stat"><span>DÉCISIONS PRISES</span><strong>{pathPosition - 1} / {scenario.steps.length}</strong></div>
+            <div className="aside-stat"><span>DÉCISIONS PRISES</span><strong>{pathPosition - 1} / {scenario.questionCount ?? scenario.steps.length}</strong></div>
           </div>
           <div className="aside-tip"><span>◎</span><p><strong>Conseil de méthode</strong><br />Distinguez les faits confirmés des hypothèses, puis choisissez une mesure proportionnée et vérifiable.</p></div>
         </aside>

@@ -12,11 +12,11 @@ function answer(id, label, detail, consequence, bias, recommended, impact) {
   };
 }
 
-function question(id, title, context, alert, constraint, options) {
-  return { id, title, context, alert, constraint, options };
+function question(id, title, context, alert, constraint, options, routeLabel = null) {
+  return { id, title, context, alert, constraint, options, routeLabel };
 }
 
-function scenario({ id, title, domain, difficulty, duration, objective, description, accent, steps }) {
+function scenario({ id, title, domain, difficulty, duration, objective, description, accent, steps, questionCount }) {
   return {
     id,
     title,
@@ -26,11 +26,12 @@ function scenario({ id, title, domain, difficulty, duration, objective, descript
     objective,
     description,
     accent,
+    questionCount: questionCount ?? steps.length,
     steps: steps.map((step, index) => ({
       ...step,
       options: step.options.map((option) => ({
         ...option,
-        next: steps[index + 1]?.id ?? null,
+        next: option.next !== undefined ? option.next : steps[index + 1]?.id ?? null,
       })),
     })),
   };
@@ -106,6 +107,7 @@ export const defaultScenarios = [
     objective: 'Maintenir les sessions établies et traiter les nouvelles authentifications en mode dégradé sans fail-open global.',
     description: 'À 08 h 30, PacketFence sur DC1 devient injoignable. Arbitrer entre continuité des sessions, authentification locale de secours et Critical VLAN.',
     accent: 'emerald',
+    questionCount: 4,
     steps: [
       question(
         'survival-existing',
@@ -115,8 +117,8 @@ export const defaultScenarios = [
         'Éviter une coupure globale sans élargir les autorisations',
         [
           answer('survival-keep-sessions', 'Maintenir les sessions et le VLAN 11 existants, puis vérifier leur état et leur périmètre', 'Le plan de données continue ; la panne du contrôleur ne justifie pas de déconnecter les sessions saines.', 'Les activités en cours sont préservées pendant le diagnostic du plan de contrôle.', 'Biais évité : traiter les connexions établies comme des demandes nouvelles.', true),
-          answer('survival-drop-all', 'Couper toutes les sessions pour forcer une réauthentification', 'Le service RADIUS indisponible empêcherait ensuite plusieurs reconnexions.', 'La mesure augmente les pertes de service et ne rétablit pas le contrôle central.', 'Biais commis : appliquer un redémarrage global sans plan de reprise.', false, { security: 7, availability: -24, logic: -10 }),
-          answer('survival-open-all', 'Basculer tous les ports en accès ouvert', 'Cette action évite certains refus mais supprime le contrôle d’admission.', 'Le mode dégradé devient une ouverture durable potentielle.', 'Biais commis : masquer l’indisponibilité en supprimant la protection.', false, { security: -24, availability: 15, logic: -15 }),
+          { ...answer('survival-drop-all', 'Couper toutes les sessions pour forcer une réauthentification', 'Le service RADIUS indisponible empêcherait ensuite plusieurs reconnexions.', 'La mesure augmente les pertes de service et ne rétablit pas le contrôle central.', 'Biais commis : appliquer un redémarrage global sans plan de reprise.', false, { security: 7, availability: -24, logic: -10 }), next: 'survival-branch-response' },
+          { ...answer('survival-open-all', 'Basculer tous les ports en accès ouvert', 'Cette action évite certains refus mais supprime le contrôle d’admission.', 'Le mode dégradé devient une ouverture durable potentielle.', 'Biais commis : masquer l’indisponibilité en supprimant la protection.', false, { security: -24, availability: 15, logic: -15 }), next: 'survival-branch-response' },
         ],
       ),
       question(
@@ -126,10 +128,23 @@ export const defaultScenarios = [
         'Timeout RADIUS distant · service local de secours disponible',
         'Éviter à la fois fail-open total et fail-close général',
         [
-          answer('survival-local-radius', 'Valider la santé et les politiques de FreeRADIUS local, puis activer le basculement prévu', 'La décision s’appuie sur un secours testé et sur des règles limitées aux identités et services nécessaires.', 'Les nouvelles authentifications peuvent continuer avec des contrôles cohérents en mode dégradé.', 'Biais évité : improviser une exception globale pendant une panne.', true),
-          answer('survival-fail-open', 'Accepter toute demande après expiration du délai RADIUS', 'Le timeout n’est pas une preuve d’identité ou de conformité.', 'Des équipements inconnus peuvent être admis sans contrôle.', 'Biais commis : assimiler indisponibilité du contrôle à une autorisation.', false, { security: -25, availability: 16, logic: -16 }),
-          answer('survival-fail-close', 'Refuser toute nouvelle connexion et toute reprise de session', 'Le refus protège le périmètre mais ignore le mécanisme de continuité préparé.', 'Les nouveaux arrivants légitimes sont bloqués malgré un secours disponible.', 'Biais commis : appliquer le refus maximal sans distinguer le risque et le service.', false, { security: 14, availability: -22, logic: -10 }),
+          { ...answer('survival-local-radius', 'Valider la santé et les politiques de FreeRADIUS local, puis activer le basculement prévu', 'La décision s’appuie sur un secours testé et sur des règles limitées aux identités et services nécessaires.', 'Les nouvelles authentifications peuvent continuer avec des contrôles cohérents en mode dégradé.', 'Biais évité : improviser une exception globale pendant une panne.', true), next: 'survival-critical-vlan' },
+          { ...answer('survival-fail-open', 'Accepter toute demande après expiration du délai RADIUS', 'Le timeout n’est pas une preuve d’identité ou de conformité.', 'Des équipements inconnus peuvent être admis sans contrôle.', 'Biais commis : assimiler indisponibilité du contrôle à une autorisation.', false, { security: -25, availability: 16, logic: -16 }), next: 'survival-critical-vlan' },
+          { ...answer('survival-fail-close', 'Refuser toute nouvelle connexion et toute reprise de session', 'Le refus protège le périmètre mais ignore le mécanisme de continuité préparé.', 'Les nouveaux arrivants légitimes sont bloqués malgré un secours disponible.', 'Biais commis : appliquer le refus maximal sans distinguer le risque et le service.', false, { security: 14, availability: -22, logic: -10 }), next: 'survival-critical-vlan' },
         ],
+      ),
+      question(
+        'survival-branch-response',
+        'Réagir à l’impact de votre première décision',
+        'La coupure générale interrompt des sessions métier, ou l’ouverture globale laisse des ports sans contrôle. Il faut maintenant limiter les effets de cette décision sans improviser une nouvelle bascule générale.',
+        'Mode dégradé instable · impact métier ou exposition accrue',
+        'Rétablir un périmètre contrôlé avant de poursuivre le secours',
+        [
+          answer('survival-restore-boundaries', 'Réduire le périmètre touché, vérifier les sessions et journaliser chaque réadmission', 'La reprise est ciblée et contrôlable ; les accès sont restaurés après vérification.', 'Le service revient progressivement sans conserver une ouverture globale ni répéter la coupure.', 'Biais évité : corriger une mesure excessive par une autre action générale.', true, { security: 11, availability: 7, logic: 10 }),
+          answer('survival-leave-exception', 'Conserver le mode actuel jusqu’au retour du serveur central', 'Aucune limite ni échéance ne protège contre la persistance du mode dégradé.', 'La coupure ou l’ouverture excessive se prolonge pendant toute l’indisponibilité.', 'Biais commis : transformer une mesure temporaire en état durable.', false, { security: -16, availability: -10, logic: -13 }),
+          answer('survival-reset-again', 'Redémarrer tous les équipements avant de vérifier les journaux', 'Un redémarrage supplémentaire efface des indices et peut étendre l’incident.', 'Le périmètre de l’incident devient plus difficile à établir et la disponibilité baisse encore.', 'Biais commis : agir avant de mesurer les conséquences de la première action.', false, { security: -8, availability: -17, logic: -18 }),
+        ],
+        'CHEMIN ALTERNATIF · IMPACT À CORRIGER',
       ),
       question(
         'survival-critical-vlan',

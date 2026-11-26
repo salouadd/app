@@ -1,12 +1,40 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { defaultScenarios } from '../src/data/scenarios.js';
-import { compareLeaderboardEntries, createOptionOrders, createRun, getTimerSeconds, rankLeaderboardEntries } from '../src/lib/scenarioRun.js';
+import {
+  compareLeaderboardEntries,
+  createOptionOrders,
+  createRun,
+  getDecisionProfile,
+  getRecommendedTrajectory,
+  getTimerSeconds,
+  getTotalQuestionCount,
+  rankLeaderboardEntries,
+} from '../src/lib/scenarioRun.js';
 import { validateProgress, validateRun } from '../lib/validateRun.js';
+
+function createHistory(scenarios, chooseOption = (_scenario, step) => step.options.find((option) => option.recommended)) {
+  return scenarios.flatMap((scenario) => {
+    const history = [];
+    let step = scenario.steps[0];
+    while (step) {
+      const option = chooseOption(scenario, step);
+      history.push({
+        scenarioId: scenario.id,
+        stepId: step.id,
+        optionId: option.id,
+        recommendedOptionId: step.options.find((item) => item.recommended).id,
+      });
+      step = option.next ? scenario.steps.find((item) => item.id === option.next) : null;
+    }
+    return history;
+  });
+}
 
 test('the full shared run contains sixteen decision questions', () => {
   assert.equal(defaultScenarios.length, 4);
-  assert.equal(defaultScenarios.reduce((total, scenario) => total + scenario.steps.length, 0), 16);
+  assert.equal(getTotalQuestionCount(defaultScenarios), 16);
+  assert.equal(createRun(defaultScenarios).totalQuestions, 16);
 });
 
 test('recommended choices are shuffled into a balanced position', () => {
@@ -42,11 +70,7 @@ test('four-choice questions use the D position in the balanced answer order', ()
 });
 
 test('server recomputes scores from the recorded answers', () => {
-  const history = defaultScenarios.flatMap((scenario) => scenario.steps.map((step) => ({
-    scenarioId: scenario.id,
-    stepId: step.id,
-    optionId: step.options.find((option) => option.recommended).id,
-  })));
+  const history = createHistory(defaultScenarios);
   const result = validateRun(defaultScenarios.map((scenario) => scenario.id), history, defaultScenarios);
   assert.equal(result.valid, true);
   assert.deepEqual(result.scores, { security: 100, availability: 100, logic: 100 });
@@ -61,19 +85,52 @@ test('the global score starts at zero and only correct answers raise it', () => 
   assert.deepEqual(run.scores, { security: 0, availability: 0, logic: 0 });
 
   let answerIndex = 0;
-  const history = defaultScenarios.flatMap((scenario) => scenario.steps.map((step) => {
+  const history = createHistory(defaultScenarios, (scenario, step) => {
     const recommended = step.options.find((option) => option.recommended);
     const incorrect = step.options.find((option) => !option.recommended);
     answerIndex += 1;
-    return {
-      scenarioId: scenario.id,
-      stepId: step.id,
-      optionId: answerIndex <= 8 ? recommended.id : incorrect.id,
-    };
-  }));
+    return answerIndex <= 8 ? recommended : incorrect;
+  });
   const result = validateRun(defaultScenarios.map((scenario) => scenario.id), history, defaultScenarios);
   assert.equal(result.correctAnswers, 8);
   assert.equal(result.accuracyScore, 50);
+});
+
+test('a decision can change the next question and the server validates that branch', () => {
+  const history = createHistory(defaultScenarios, (scenario, step) => {
+    if (step.id === 'survival-existing') {
+      return step.options.find((option) => option.id === 'survival-open-all');
+    }
+    return step.options.find((option) => option.recommended);
+  });
+  const result = validateRun(defaultScenarios.map((scenario) => scenario.id), history, defaultScenarios);
+  const branch = history.find((entry) => entry.scenarioId === 'nac-survival');
+
+  assert.equal(result.valid, true);
+  assert.equal(history.some((entry) => entry.stepId === 'survival-branch-response'), true);
+  assert.equal(history.some((entry) => entry.stepId === 'survival-auth'), false);
+
+  const invalidHistory = history.map((entry) => (
+    entry.stepId === 'survival-branch-response' ? { ...entry, stepId: 'survival-auth' } : entry
+  ));
+  assert.equal(validateRun(defaultScenarios.map((scenario) => scenario.id), invalidHistory, defaultScenarios).valid, false);
+  assert.equal(branch.stepId, 'survival-existing');
+});
+
+test('the debrief identifies decision tendencies and computes the recommended trajectory', () => {
+  const history = createHistory(defaultScenarios, (scenario, step) => (
+    step.id === 'survival-existing'
+      ? step.options.find((option) => option.id === 'survival-open-all')
+      : step.options.find((option) => option.recommended)
+  ));
+  const profile = getDecisionProfile(defaultScenarios, history);
+
+  assert.equal(profile.title, 'Garant de continuité');
+  assert.deepEqual(getRecommendedTrajectory(defaultScenarios), {
+    security: 100,
+    availability: 100,
+    logic: 100,
+  });
 });
 
 test('partial progress is validated and scored against the complete run', () => {

@@ -31,10 +31,11 @@ En local, l’API et l’application tournent sur le même ordinateur. Pour test
 
 ## Règles du parcours
 
-- Le parcours partagé comprend quatre scénarios NAC/Zero Trust, continuité NAC, réponse CoA et gouvernance ISO 22301, soit seize questions. Seul l’organisateur authentifié peut créer, importer ou modifier des scénarios personnalisés ; ceux-ci restent locaux à son navigateur et ne sont pas ajoutés au parcours partagé.
+- Le parcours partagé comprend quatre scénarios NAC/Zero Trust, continuité NAC, réponse CoA et gouvernance ISO 22301, soit seize décisions par participant. Dans le scénario de continuité NAC, certains choix ouvrent une question différente et modifient la suite du parcours. Seul l’organisateur authentifié peut créer, importer ou modifier des scénarios personnalisés ; ceux-ci restent locaux à son navigateur et ne sont pas ajoutés au parcours partagé.
 - Le chronomètre dure 45 secondes (débutant), 40 (intermédiaire), 35 (avancé) ou 30 (expert). Une question sans réponse est enregistrée comme telle, sans modifier les scores, puis le parcours continue automatiquement.
 - La position de la réponse recommandée est mélangée et répartie entre A, B, C et D selon le nombre de choix.
 - Le serveur valide l’historique et recalcule les scores à partir des réponses reçues.
 - Le score global commence à 0 et ne progresse qu’avec les réponses recommandées ; 16 bonnes réponses sur 16 donnent 100 %. Une erreur ou une question expirée ne retire pas les points déjà gagnés. Les conséquences des décisions restent détaillées dans le débrief.
+- Le bilan final présente une tendance décisionnelle propre aux compromis réalisés, le rythme moyen de réponse et une comparaison des indicateurs avec la trajectoire conseillée. Cette tendance décrit uniquement les choix de la simulation, pas la personnalité du participant.
 - Le podium classe d’abord le score global, puis le temps total de la session (du départ de l’organisateur à la fin du parcours), le plus court d’abord. Un score et un temps identiques partagent le même rang.
 - Les pseudos et réponses restent déclaratifs : ce podium n’est pas une preuve d’identité ni un classement inviolable. Une personne peut usurper un pseudo ; n’utilise pas d’informations sensibles.

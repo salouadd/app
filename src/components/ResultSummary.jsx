@@ -1,28 +1,37 @@
-import { formatElapsedTime, rankLeaderboardEntries } from '../lib/scenarioRun.js';
+import {
+  formatElapsedTime,
+  getDecisionProfile,
+  getRecommendedTrajectory,
+  rankLeaderboardEntries,
+} from '../lib/scenarioRun.js';
 
 const metricDetails = [
-  { key: 'accuracyScore', label: 'Score global', color: 'cyan', description: 'Chaque bonne réponse augmente le score ; une erreur ne le diminue pas' },
+  { key: 'security', label: 'Sécurité / contrôle', color: 'cyan' },
+  { key: 'availability', label: 'Disponibilité', color: 'emerald' },
+  { key: 'logic', label: 'Rigueur logique', color: 'amber' },
 ];
 
-function getProfile(accuracyScore) {
-  if (accuracyScore >= 80) {
+function findCascadeDecision(scenarios, history) {
+  const scenariosById = new Map(scenarios.map((scenario) => [scenario.id, scenario]));
+  for (const entry of history) {
+    const scenario = scenariosById.get(entry.scenarioId);
+    const step = scenario?.steps.find((item) => item.id === entry.stepId);
+    const chosen = step?.options.find((item) => item.id === entry.optionId);
+    const recommended = step?.options.find((item) => item.recommended);
+    if (!chosen || !recommended || chosen.next === recommended.next) continue;
     return {
-      title: 'Architecte résilient',
-      subtitle: 'Excellente maîtrise du parcours',
-      copy: 'Vous avez choisi avec précision des réponses adaptées aux scénarios. Continuez à privilégier des décisions vérifiables et proportionnées.',
-      tone: 'emerald',
+      choice: chosen.label,
+      nextStep: scenario.steps.find((item) => item.id === chosen.next),
+      scenarioTitle: scenario.title,
     };
   }
-  return {
-    title: 'Décideur en progression',
-    subtitle: 'Des réponses à revoir',
-    copy: 'Le débrief détaille les choix recommandés et leurs conséquences pour vous aider à consolider votre raisonnement.',
-    tone: 'amber',
-  };
+  return null;
 }
 
 export default function ResultSummary({ scenarios, run, leaderboard, onReplay, onCatalog }) {
-  const profile = getProfile(run.accuracyScore);
+  const profile = getDecisionProfile(scenarios, run.history);
+  const recommendedScores = getRecommendedTrajectory(scenarios);
+  const cascadeDecision = findCascadeDecision(scenarios, run.history);
   const scenariosById = new Map(scenarios.map((scenario) => [scenario.id, scenario]));
   const username = run.participant?.username;
   const rankedLeaderboard = rankLeaderboardEntries(leaderboard);
@@ -56,12 +65,40 @@ export default function ResultSummary({ scenarios, run, leaderboard, onReplay, o
       <section className={`profile-card profile-${profile.tone}`}>
         <div className="profile-symbol">◈</div>
         <div className="profile-copy">
-          <span className="micro-label">VOTRE PROFIL DÉCISIONNEL</span>
+          <span className="micro-label">VOTRE TENDANCE DANS CETTE SIMULATION</span>
           <h2>{profile.title}</h2>
           <strong>{profile.subtitle}</strong>
-          <p>{profile.copy}</p>
+          <p>Ce profil résume les compromis observés dans vos choix ; il décrit votre parcours, pas votre personnalité.</p>
+          {profile.pace && <span className="profile-tempo">{profile.pace} · moyenne {formatElapsedTime(profile.averageResponseTime)}</span>}
         </div>
       </section>
+
+      <section className="trajectory-section">
+        <div className="section-heading">
+          <div><span className="eyebrow-mark">04</span><h2>Votre trajectoire et le parcours conseillé</h2></div>
+          <span className="choice-count">INDICATEURS FINAUX</span>
+        </div>
+        <div className="trajectory-grid">
+          {metricDetails.map((metric) => (
+            <article className="trajectory-metric" key={metric.key}>
+              <div><span>{metric.label}</span><strong>{run.scores[metric.key]} / {recommendedScores[metric.key]}</strong></div>
+              <div className="trajectory-bars" aria-label={`${metric.label} : votre parcours ${run.scores[metric.key]}, parcours conseillé ${recommendedScores[metric.key]}`}>
+                <span className={`trajectory-bar ${metric.color}`} style={{ width: `${run.scores[metric.key]}%` }} />
+                <span className="trajectory-reference" style={{ left: `${recommendedScores[metric.key]}%` }} />
+              </div>
+              <small>Votre parcours / conseillé</small>
+            </article>
+          ))}
+        </div>
+        <p className="trajectory-note">La référence suit les réponses recommandées, y compris les embranchements qu’elles ouvrent.</p>
+      </section>
+
+      {cascadeDecision && (
+        <section className="cascade-result-card">
+          <span className="micro-label">CONSÉQUENCE EN CASCADE · {cascadeDecision.scenarioTitle}</span>
+          <p>Votre choix « <strong>{cascadeDecision.choice}</strong> » a changé la suite du scénario : <strong>{cascadeDecision.nextStep?.title || 'fin du scénario'}</strong>.</p>
+        </section>
+      )}
 
       {username && (
         <section className="leaderboard-section">

@@ -197,6 +197,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .briefing-card, .panel, .aside-panel { border: 1px solid #1f2937; border-radius: 4px; background: #111827; }
 .briefing-card { padding: 22px 24px 19px; }
 .briefing-card h1 { color: #f1f5f9; font-size: clamp(24px, 3vw, 33px); font-weight: 560; letter-spacing: -.04em; margin: 17px 0 9px; }
+.branch-route-note { display: inline-block; margin-top: 12px; padding: 5px 8px; border: 1px solid #5b4422; color: #fbbf24; background: #1b1913; font: 7px ui-monospace, monospace; letter-spacing: .06em; }
+.branch-route-note + h1 { margin-top: 9px; }
 .briefing-context { max-width: 800px; color: #9aa6b7; font-size: 11px; line-height: 1.8; margin: 0; }
 .alert-strip { margin-top: 18px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; border: 1px solid #493a26; border-radius: 3px; background: #201b14; }
 .alert-icon { width: 17px; height: 17px; display: grid; place-items: center; border-radius: 50%; background: #f59e0b; color: #1a1204; font: 700 11px ui-monospace, monospace; }
@@ -278,8 +280,24 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .profile-copy > strong { color: #10b981; font-size: 9px; font-weight: 550; }
 .profile-amber .profile-copy > strong { color: #f59e0b; }.profile-alert .profile-copy > strong { color: #ef4444; }.profile-cyan .profile-copy > strong { color: #06b6d4; }
 .profile-copy p { margin: 8px 0 0; max-width: 750px; color: #9aa6b5; font-size: 9px; line-height: 1.7; }
+.profile-tempo { display: inline-block; margin-top: 9px; color: #06b6d4; font: 8px ui-monospace, monospace; }
 .profile-score { padding-left: 17px; border-left: 1px solid #2d433e; display: grid; gap: 4px; color: #718096; font: 7px ui-monospace, monospace; }
 .profile-score strong { color: #10b981; font-size: 17px; }.profile-score small { font-size: 8px; }
+.trajectory-section { margin-top: 27px; padding: 17px; border: 1px solid #263449; border-radius: 4px; background: #0e1622; }
+.trajectory-section .section-heading { margin-bottom: 15px; }
+.trajectory-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.trajectory-metric { min-width: 0; padding: 11px; border: 1px solid #253142; border-radius: 3px; background: #111827; }
+.trajectory-metric > div:first-child { display: flex; justify-content: space-between; gap: 8px; color: #8d99aa; font-size: 8px; }
+.trajectory-metric strong { color: #dce3eb; font: 9px ui-monospace, monospace; white-space: nowrap; }
+.trajectory-bars { position: relative; height: 5px; margin: 10px 0 7px; overflow: visible; border-radius: 4px; background: #253142; }
+.trajectory-bar { display: block; height: 100%; border-radius: inherit; }
+.trajectory-bar.cyan { background: #06b6d4; }.trajectory-bar.emerald { background: #10b981; }.trajectory-bar.amber { background: #f59e0b; }
+.trajectory-reference { position: absolute; top: -3px; height: 11px; border-left: 2px solid #f1f5f9; }
+.trajectory-metric small, .trajectory-note { color: #718096; font-size: 8px; }
+.trajectory-note { margin: 12px 0 0; line-height: 1.6; }
+.cascade-result-card { margin-top: 12px; padding: 14px 16px; border: 1px solid #5b4422; border-radius: 4px; background: #1b1913; }
+.cascade-result-card > p { margin: 7px 0 0; color: #a9a397; font-size: 9px; line-height: 1.7; }
+.cascade-result-card strong { color: #f3ead4; font-weight: 550; }
 .leaderboard-section { margin-top: 29px; }
 .leaderboard-section .section-heading { margin-bottom: 14px; }
 .leaderboard-rank, .leaderboard-empty { color: #9aa6b5; font-size: 10px; }
@@ -440,6 +458,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .builder-submit-actions { width: 100%; }
   .profile-card { padding: 14px; gap: 11px; }
   .profile-score { padding-left: 10px; }
+  .trajectory-grid { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {
